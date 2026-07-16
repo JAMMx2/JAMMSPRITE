@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+out/
+.venv/
+env/
+*.egg-info/
+.DS_Store
+# rembg model cache
+.u2net/
