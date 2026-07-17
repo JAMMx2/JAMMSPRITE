@@ -13,8 +13,9 @@ sprite sheet. It's the engine behind [Stella](#the-story), a photoreal cat
 rendered in phosphor-green ASCII.
 
 <p align="center">
-  <img src="examples/walk.gif" width="300" alt="cat walk cycle in ASCII">
-  <img src="examples/panther_stand.gif" width="300" alt="panther in ASCII">
+  <img src="examples/walk.gif" width="270" alt="cat walk cycle in ASCII">
+  <img src="examples/ninja.gif" width="270" alt="martial-arts kick in ASCII">
+  <img src="examples/panther_stand.gif" width="270" alt="panther in ASCII">
 </p>
 
 ---
