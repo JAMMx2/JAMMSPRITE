@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jammsprite"
+version = "1.1.0"
+description = "Turn real video or photos into clean, animated ASCII sprites."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Christopher Moore" }]
+requires-python = ">=3.9"
+dependencies = [
+    "rembg>=2.0.50",
+    "onnxruntime>=1.16",
+    "pillow>=10.0",
+    "scipy>=1.11",
+    "numpy>=1.24",
+]
+keywords = ["ascii", "ascii-art", "sprite", "sprite-sheet", "gamedev", "animation", "rembg", "terminal"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Text Processing",
+]
+
+[project.scripts]
+jammsprite = "jammsprite.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/JAMMx2/JAMMSPRITE"
+Issues = "https://github.com/JAMMx2/JAMMSPRITE/issues"
+Changelog = "https://github.com/JAMMx2/JAMMSPRITE/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+packages = ["jammsprite"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E741"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
