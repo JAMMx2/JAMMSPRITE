@@ -22,6 +22,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -225,14 +226,23 @@ def frames_from_video(path, start, dur, fps, n):
     if n and len(fs) > n:
         step = len(fs) / n
         fs = [fs[int(i * step)] for i in range(n)]
-    return [Image.open(f) for f in fs]
+    imgs = []
+    for f in fs:  # eager-load so the temp dir can be removed immediately
+        with Image.open(f) as im:
+            imgs.append(im.convert("RGB"))
+    shutil.rmtree(tmp, ignore_errors=True)
+    return imgs
 
 
 def frames_from_folder(path):
     fs = sorted(f for f in glob.glob(os.path.join(path, "*")) if f.lower().endswith(IMG_EXT))
     if not fs:
         sys.exit(f"no images found in {path}")
-    return [Image.open(f) for f in fs]
+    out = []
+    for f in fs:  # eager-load so no file handles linger
+        with Image.open(f) as im:
+            out.append(im.convert("RGB"))
+    return out
 
 
 def frames_from_still(path, breathe):
