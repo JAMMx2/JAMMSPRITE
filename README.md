@@ -5,7 +5,7 @@
 [![CI](https://github.com/JAMMx2/JAMMSPRITE/actions/workflows/ci.yml/badge.svg)](https://github.com/JAMMx2/JAMMSPRITE/actions/workflows/ci.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-2ea44f)](https://github.com/JAMMx2/JAMMSPRITE/blob/main/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
-[![Changelog](https://img.shields.io/badge/changelog-v1.1.0-2ea44f)](CHANGELOG.md)
+[![Changelog](https://img.shields.io/badge/changelog-v1.1.1-2ea44f)](CHANGELOG.md)
 
 Feed it a short clip of a cat walking (or anything), and it gives you back a
 game-ready sprite made entirely of text glyphs — plus an animated preview and a
@@ -124,8 +124,9 @@ Each run writes to `./out/` (override with `--out`):
 
 ## Preview in your browser
 
-Open [`tools/player.html`](tools/player.html) — no install, no server — and drop
-any `*.frames.json` on it. You get play/pause, an fps slider, flip, full-colour
+Open [`tools/player.html`](tools/player.html) in a browser (grab a local copy —
+GitHub shows HTML as source) — no install, no server — and drop any
+`*.frames.json` on it. You get play/pause, an fps slider, flip, full-colour
 mode, and a live tint picker. Handy for checking a sprite before wiring it into
 an engine.
 

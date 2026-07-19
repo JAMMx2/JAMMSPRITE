@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jammsprite"
-version = "1.1.0"
+version = "1.1.1"
 description = "Turn real video or photos into clean, animated ASCII sprites."
 readme = "README.md"
 license = { text = "MIT" }
