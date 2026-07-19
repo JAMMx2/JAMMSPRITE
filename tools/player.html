@@ -62,8 +62,6 @@
 
   let data = null, frames = [], pre = [], idx = 0, playing = true, last = 0, acc = 0;
 
-  const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-
   function prerender() {
     if (!frames.length) return;
     const flip = $("flip").checked, colored = $("colored").checked, tint = $("tint").value;
