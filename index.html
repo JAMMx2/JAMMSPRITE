@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JAMMSPRITE — photos, GIFs &amp; video to ASCII sprites</title>
+<meta name="description" content="Turn photos, GIFs and short videos into clean, colorful ASCII sprites — in your browser, offline, one HTML file.">
+<style>
+:root{
+  --bg:#070b09; --panel:#0b110d; --edge:#1d3a2a; --edge2:#123021;
+  --fg:#7cffb2; --fg-dim:#3f8f63; --fg-faint:#255c3e; --hot:#ffbf50; --err:#ff6e6e;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font:13px/1.45 "Cascadia Mono","Consolas","DejaVu Sans Mono",Menlo,monospace;
+  display:flex; flex-direction:column; min-height:100vh;
+}
+body::after{ /* faint CRT scanlines */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:99;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.13) 0 1px, transparent 1px 3px);
+}
+a{color:var(--hot)}
+header{
+  padding:10px 16px 8px; border-bottom:1px solid var(--edge);
+  display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+}
+header h1{font-size:18px; letter-spacing:2px; font-weight:700; text-shadow:0 0 8px rgba(124,255,178,.45)}
+header h1 .blk{color:var(--hot)}
+header .sub{color:var(--fg-dim); font-size:12px}
+main{flex:1; display:flex; gap:0; min-height:0}
+#side{
+  width:270px; min-width:270px; border-right:1px solid var(--edge);
+  padding:10px 12px 40px; overflow-y:auto; background:var(--panel);
+}
+#stagewrap{flex:1; display:flex; flex-direction:column; min-width:0}
+#drop{
+  margin:14px; border:2px dashed var(--edge); border-radius:6px; flex:1;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+  text-align:center; cursor:pointer; min-height:220px; transition:border-color .15s, background .15s;
+}
+#drop.on{border-color:var(--fg); background:rgba(124,255,178,.05)}
+#drop .big{font-size:17px; letter-spacing:1px}
+#drop .small{color:var(--fg-dim); font-size:12px; max-width:520px}
+#drop .btnrow{display:flex; gap:10px; margin-top:4px}
+#stage{flex:1; display:none; flex-direction:column; min-height:0}
+#viewwrap{flex:1; overflow:auto; display:flex; align-items:center; justify-content:center; padding:10px}
+#view{image-rendering:pixelated; max-width:100%; box-shadow:0 0 30px rgba(0,0,0,.6); border:1px solid var(--edge2)}
+#playbar{
+  display:flex; align-items:center; gap:10px; padding:8px 14px; border-top:1px solid var(--edge);
+  flex-wrap:wrap;
+}
+#exports{
+  display:flex; align-items:center; gap:8px; padding:8px 14px 10px; border-top:1px solid var(--edge);
+  flex-wrap:wrap;
+}
+#status{
+  padding:5px 14px; color:var(--fg-dim); font-size:12px; border-top:1px solid var(--edge2);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+#status b{color:var(--fg)}
+#status.err{color:var(--err)}
+h3{
+  font-size:11px; letter-spacing:2px; color:var(--fg-dim); text-transform:uppercase;
+  margin:14px 0 6px; border-bottom:1px solid var(--edge2); padding-bottom:3px;
+}
+h3:first-child{margin-top:2px}
+.row{display:flex; align-items:center; gap:7px; margin:5px 0; flex-wrap:wrap}
+.lab{width:56px; color:var(--fg-dim); font-size:11px; flex:none}
+.num{min-width:30px; text-align:right; color:var(--hot); font-size:11px}
+input[type=range]{flex:1; accent-color:#7cffb2; height:18px; background:transparent}
+select,input[type=number],input[type=text]{
+  background:#0f1a13; color:var(--fg); border:1px solid var(--edge); border-radius:3px;
+  font:inherit; font-size:12px; padding:2px 5px;
+}
+select{flex:1; min-width:0}
+input[type=color]{width:30px; height:22px; padding:0; border:1px solid var(--edge); background:none; border-radius:3px; cursor:pointer}
+button{
+  background:#0f2417; color:var(--fg); border:1px solid var(--edge); border-radius:4px;
+  font:inherit; font-size:12px; padding:5px 11px; cursor:pointer; letter-spacing:.5px;
+}
+button:hover{background:#153421; border-color:var(--fg-dim)}
+button.primary{background:#1b4a2e; border-color:var(--fg-dim); font-weight:700; text-shadow:0 0 6px rgba(124,255,178,.5)}
+button.primary:hover{background:#226039}
+button.mini{padding:3px 8px; font-size:11px}
+button.on{background:#2a6a41; border-color:var(--fg); box-shadow:0 0 8px rgba(124,255,178,.35) inset}
+button:disabled{opacity:.45; cursor:default}
+.sw{width:20px; height:20px; border-radius:3px; border:1px solid var(--edge); cursor:pointer; flex:none}
+.sw.on{outline:2px solid var(--fg); outline-offset:1px}
+.hint{color:var(--fg-faint); font-size:11px; margin:3px 0 6px; line-height:1.4}
+.seg{display:flex; gap:0; border:1px solid var(--edge); border-radius:4px; overflow:hidden; flex:1}
+.seg button{flex:1; border:0; border-radius:0; padding:4px 6px; font-size:11px}
+.seg button+button{border-left:1px solid var(--edge)}
+#file{display:none}
+#pbar{
+  height:3px; background:var(--edge2); border-radius:2px; overflow:hidden; margin:6px 14px 0; display:none;
+}
+#pbar div{height:100%; width:0%; background:var(--fg); transition:width .12s}
+footer{padding:6px 16px; border-top:1px solid var(--edge); color:var(--fg-faint); font-size:11px; display:flex; gap:16px; flex-wrap:wrap}
+@media (max-width:760px){
+  main{flex-direction:column}
+  #side{width:100%; min-width:0; border-right:0; border-bottom:1px solid var(--edge); max-height:44vh}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>JAMMSPRITE<span class="blk">▓</span>WEB</h1>
+  <span class="sub">photos · GIFs · video → clean ASCII sprites — offline, one file, no install</span>
+</header>
+<div id="pbar"><div></div></div>
+<main>
+  <div id="side">
+    <h3>Grid</h3>
+    <div class="row"><span class="lab">Cols</span><input type="range" id="cols" min="60" max="220" value="150"><span class="num" id="colsN">150</span></div>
+    <div class="row"><span class="lab">Rows</span><input type="range" id="rows" min="40" max="120" value="84"><span class="num" id="rowsN">84</span></div>
+
+    <h3>Glyphs</h3>
+    <div class="row"><span class="lab">Style</span><select id="charset"></select></div>
+    <div class="row"><span class="lab">Gamma</span><input type="range" id="gamma" min="40" max="250" value="100"><span class="num" id="gammaN">1.0</span></div>
+    <div class="row"><span class="lab"></span><button class="mini" id="invert">Invert ramp</button></div>
+
+    <h3>Color</h3>
+    <div class="row"><div class="seg" id="colorMode">
+      <button data-m="color" class="on">Full color</button><button data-m="tint">Tint</button>
+    </div></div>
+    <div class="row" id="tintRow" style="display:none"><span class="lab">Tint</span><div id="tints" style="display:flex;gap:4px;flex-wrap:wrap;flex:1"></div></div>
+    <div class="row" id="tintRow2" style="display:none"><span class="lab">Custom</span><input type="color" id="tintPick" value="#7cffb2"><span class="hint" style="margin:0">any color you want</span></div>
+    <div class="row"><span class="lab">Backgr</span><input type="color" id="bgPick" value="#070b09"><button class="mini" id="bgDark">dark</button><button class="mini" id="bgBlack">black</button><button class="mini" id="bgWhite">white</button></div>
+
+    <h3>Cutout</h3>
+    <div class="row"><div class="seg" id="cutMode">
+      <button data-m="auto" class="on">Auto cutout</button><button data-m="full">Keep background</button>
+    </div></div>
+    <div class="row" id="tolRow"><span class="lab">Strength</span><input type="range" id="tol" min="8" max="120" value="42"><span class="num" id="tolN">42</span></div>
+    <div class="hint">Auto uses transparency when the image has it, otherwise it removes the flat background around your subject. Flat gray / green-screen backgrounds cut cleanest. “Keep background” converts the whole frame.</div>
+
+    <h3>Animation</h3>
+    <div class="row"><span class="lab">Frames</span><input type="range" id="maxFrames" min="1" max="32" value="16"><span class="num" id="maxFramesN">16</span></div>
+    <div class="row"><span class="lab">Video fps</span><input type="range" id="fps" min="2" max="15" value="6"><span class="num" id="fpsN">6</span></div>
+    <div class="row"><span class="lab">Speed</span><input type="range" id="delay" min="40" max="400" step="10" value="120"><span class="num" id="delayN">120ms</span></div>
+    <div class="row"><span class="lab"></span><button class="mini" id="flip">Flip ◄►</button><button class="mini" id="breathe">Breathe (stills)</button></div>
+
+    <h3>Apply</h3>
+    <div class="row"><button class="primary" id="rerun" style="flex:1" disabled>Re-convert with these settings</button></div>
+    <div class="hint">Color, speed and background apply instantly. Grid, glyphs, cutout and frames need a re-convert.</div>
+  </div>
+
+  <div id="stagewrap">
+    <div id="drop">
+      <div class="big">DROP A PHOTO, GIF, OR SHORT VIDEO</div>
+      <div class="small">PNG · JPG · WebP · GIF (animated) · MP4 / WebM — everything runs on your device, nothing is uploaded anywhere.</div>
+      <div class="btnrow">
+        <button class="primary" id="pick">Choose a file</button>
+        <button id="demo">Try a demo sprite</button>
+      </div>
+      <div class="small" style="color:var(--fg-faint)">Tip: a subject on a flat gray or green background cuts out cleanest — or use “Keep background” for any shot.</div>
+    </div>
+    <div id="stage">
+      <div id="viewwrap"><canvas id="view"></canvas></div>
+      <div id="playbar">
+        <button class="mini" id="play">❚❚ Pause</button>
+        <input type="range" id="scrub" min="0" max="0" value="0" style="flex:1">
+        <span class="num" id="frameN">1/1</span>
+        <span class="num" id="zoomN">×1</span>
+        <button class="mini" id="zoomOut">−</button>
+        <button class="mini" id="zoomIn">+</button>
+        <button class="mini" id="newFile">New file</button>
+      </div>
+      <div id="exports">
+        <button class="primary" id="dlGif">Download GIF</button>
+        <button id="dlSheet">Sprite sheet PNG</button>
+        <button id="dlPng">This frame PNG</button>
+        <button id="dlJson">frames.json</button>
+        <button id="copyTxt">Copy as text</button>
+      </div>
+    </div>
+    <div id="status">Ready. Drop a file to begin — or press <b>Try a demo sprite</b>.</div>
+  </div>
+</main>
+<footer>
+  <span>JAMMSPRITE Web · MIT · <a href="https://github.com/JAMMx2/JAMMSPRITE" target="_blank" rel="noopener">github.com/JAMMx2/JAMMSPRITE</a></span>
+  <span>Command-line power version: <code>pip install git+https://github.com/JAMMx2/JAMMSPRITE.git</code></span>
+  <span>frames.json works with tools/player.html and your game engine.</span>
+</footer>
+<input type="file" id="file" accept="image/*,video/*,.gif,.mp4,.webm,.mov">
+<script>
+/* ============================================================
+   JAMMSPRITE Web — the whole pipeline in one file, offline.
+   Port of jammsprite/core.py: silhouette cleanup, glyph-grid
+   fit, solid fill + despeckle — plus a pure-JS GIF decoder,
+   video sampler, and an animated-GIF encoder for export.
+   Everything is exposed on window.JAMM for tinkerers/tests.
+   ============================================================ */
+"use strict";
+var $=function(s){return document.querySelector(s);};
+
+/* ---------------- charsets & tints (match the Python tool) ---------------- */
+var CHARSETS={
+  classic:" .:-=+ox*scaeX#%@&",
+  detail:" .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+  blocks:" ░▒▓█",
+  minimal:" .:oO@",
+  retro:" .:-=+*#%@",
+  dots:" .·•●█",
+  hatch:" .-+=xX#▓",
+  binary:" 01",
+  bars:" ▁▂▃▄▅▆▇█"
+};
+var TINTS={
+  green:[124,255,178], amber:[255,191,80], cyan:[110,235,255], white:[235,235,235],
+  red:[255,110,110], matrix:[0,255,70], blue:[90,160,255], purple:[200,140,255],
+  pink:[255,140,200], orange:[255,150,60], lime:[170,255,80], ice:[200,235,255]
+};
+function invertRamp(r){ return r.length<2 ? r : r[0]+r.slice(1).split("").reverse().join(""); }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function hexToRgb(h){ h=h.replace("#",""); if(h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function rgbToHex(c){ return "#"+c.map(function(v){return ("0"+v.toString(16)).slice(-2);}).join(""); }
+
+/* ================= GIF DECODER (pure JS, GIF87a/89a) =================
+   Handles: global & local palettes, LZW, interlace, transparency,
+   disposal 0/1 (leave), 2 (restore bg), 3 (restore previous).      */
+function decodeGif(buf){
+  var b=new Uint8Array(buf), p=0;
+  function u8(){ return b[p++]; }
+  function u16(){ var v=b[p]|(b[p+1]<<8); p+=2; return v; }
+  var sig=String.fromCharCode(b[0],b[1],b[2]);
+  if(sig!=="GIF") throw new Error("not a GIF");
+  p=6;
+  var W=u16(), H=u16(), pk=u8(); u8(); u8(); // bg index, aspect
+  var gct=null;
+  if(pk&0x80){ var n=2<<(pk&7); gct=b.subarray(p,p+n*3); p+=n*3; }
+  var frames=[], canvas=new Uint8ClampedArray(W*H*4), prevSnap=null;
+  var gce={delay:100, transp:-1, disposal:0};
+  function skipSub(){ var n; while((n=u8())!==0) p+=n; }
+  while(p<b.length){
+    var blk=u8();
+    if(blk===0x3B) break;                                   // trailer
+    if(blk===0x21){                                          // extension
+      var lab=u8();
+      if(lab===0xF9){ u8(); var f=u8(); gce.disposal=(f>>2)&7; var d=u16(); gce.delay=d?d*10:100; var ti=u8(); gce.transp=(f&1)?ti:-1; u8(); }
+      else skipSub();
+      continue;
+    }
+    if(blk!==0x2C) break;                                    // unknown — stop safely
+    var ix=u16(), iy=u16(), iw=u16(), ih=u16(), ipk=u8();
+    var lct=null;
+    if(ipk&0x80){ var ln=2<<(ipk&7); lct=b.subarray(p,p+ln*3); p+=ln*3; }
+    var pal=lct||gct;
+    var interlaced=!!(ipk&0x40);
+    var mcs=u8();
+    // gather LZW data
+    var chunks=[], total=0, cn;
+    while((cn=u8())!==0){ chunks.push(b.subarray(p,p+cn)); total+=cn; p+=cn; }
+    var data=new Uint8Array(total), off=0;
+    for(var c=0;c<chunks.length;c++){ data.set(chunks[c],off); off+=chunks[c].length; }
+    var idx=lzwDecode(data, mcs, iw*ih);
+    // row order (interlace)
+    var rows=new Int32Array(ih);
+    if(interlaced){ var r=0,pass,starts=[0,4,2,1],steps=[8,8,4,2];
+      for(pass=0;pass<4;pass++) for(var y=starts[pass];y<ih;y+=steps[pass]) rows[r++]=y;
+    } else for(var y2=0;y2<ih;y2++) rows[y2]=y2;
+    // snapshot for disposal 3
+    var snap=(gce.disposal===3)?canvas.slice():null;
+    // draw
+    for(var ry=0;ry<ih;ry++){
+      var dy=iy+rows[ry]; if(dy>=H) continue;
+      var srow=ry*iw, drow=(dy*W+ix)*4;
+      for(var x=0;x<iw;x++){
+        if(ix+x>=W) break;
+        var ci=idx[srow+x];
+        if(ci===gce.transp) continue;
+        var pi=ci*3, o=drow+x*4;
+        canvas[o]=pal[pi]; canvas[o+1]=pal[pi+1]; canvas[o+2]=pal[pi+2]; canvas[o+3]=255;
+      }
+    }
+    frames.push({data:canvas.slice(), delay:gce.delay});
+    // apply disposal for next frame
+    if(gce.disposal===2){
+      for(var cy=0;cy<ih;cy++){ var ddy=iy+cy; if(ddy>=H) continue;
+        var base=(ddy*W+ix)*4;
+        for(var cx=0;cx<iw && ix+cx<W;cx++){ var oo=base+cx*4; canvas[oo]=0;canvas[oo+1]=0;canvas[oo+2]=0;canvas[oo+3]=0; }
+      }
+    } else if(gce.disposal===3 && snap){ canvas.set(snap); }
+    gce={delay:100, transp:-1, disposal:0};
+  }
+  return {width:W, height:H, frames:frames};
+}
+function lzwDecode(data, minCode, expected){
+  var clear=1<<minCode, eoi=clear+1;
+  var size=minCode+1, next=eoi+1;
+  var dictP=new Int32Array(4096), dictC=new Uint8Array(4096), dictL=new Int32Array(4096);
+  function reset(){ size=minCode+1; next=eoi+1; }
+  for(var i=0;i<clear;i++){ dictP[i]=-1; dictC[i]=i; dictL[i]=1; }
+  var out=new Uint8Array(expected), op=0;
+  var bit=0, byte=0, cur=0, bits=0, prev=-1;
+  var stack=new Uint8Array(4097);
+  while(byte<data.length && op<expected){
+    // read `size` bits LSB-first
+    while(bits<size && byte<data.length){ cur|=data[byte++]<<bits; bits+=8; }
+    if(bits<size) break;
+    var code=cur&((1<<size)-1); cur>>=size; bits-=size;
+    if(code===clear){ reset(); prev=-1; continue; }
+    if(code===eoi) break;
+    var entry;
+    if(code<next && (code<clear || dictL[code])) entry=code;
+    else if(code===next && prev>=0) entry=-1;    // K = first char of prev
+    else break;                                   // corrupt — bail with what we have
+    // walk the chain onto a stack
+    var sp=0, cc, firstChar;
+    if(entry===-1){
+      cc=prev;
+      while(cc>=0){ stack[sp++]=dictC[cc]; cc=dictP[cc]; }
+      firstChar=stack[sp-1];
+      // output prev chain + firstChar
+      for(var k=sp-1;k>=0;k--){ if(op<expected) out[op++]=stack[k]; }
+      if(op<expected) out[op++]=firstChar;
+    } else {
+      cc=entry;
+      while(cc>=0){ stack[sp++]=dictC[cc]; cc=dictP[cc]; }
+      firstChar=stack[sp-1];
+      for(var k2=sp-1;k2>=0;k2--){ if(op<expected) out[op++]=stack[k2]; }
+    }
+    if(prev>=0 && next<4096){
+      dictP[next]=prev; dictC[next]=firstChar; dictL[next]=dictL[prev]+1; next++;
+      if(next===(1<<size) && size<12) size++;
+    }
+    prev=(entry===-1)?next-1:entry;
+  }
+  return out;
+}
+
+/* ================= CUTOUT: mask building + silhouette cleanup ================= */
+/* Background removal: if real transparency exists, use it. Otherwise flood-fill
+   the background in from every border pixel with a color tolerance — everything
+   the flood can't reach is the subject. (Great on flat/green/gray backdrops.)  */
+function computeMask(img, w, h, opts){
+  var mask=new Uint8Array(w*h), i, n=w*h;
+  if(opts.mode==="full"){ mask.fill(1); return mask; }
+  // transparency path
+  var hasAlpha=false;
+  for(i=3;i<n*4;i+=4){ if(img[i]<250){ hasAlpha=true; break; } }
+  if(hasAlpha){
+    for(i=0;i<n;i++) mask[i]=img[i*4+3]>128?1:0;
+    return mask;
+  }
+  // border flood path
+  var tol=opts.tol||42, tol2=tol*tol;   // euclidean RGB radius = strength slider
+  // estimate bg color = median of border ring
+  var rs=[],gs=[],bs=[];
+  function grab(x,y){ var o=(y*w+x)*4; rs.push(img[o]); gs.push(img[o+1]); bs.push(img[o+2]); }
+  for(var x0=0;x0<w;x0++){ grab(x0,0); grab(x0,h-1); }
+  for(var y0=1;y0<h-1;y0++){ grab(0,y0); grab(w-1,y0); }
+  rs.sort(function(a,b){return a-b;}); gs.sort(function(a,b){return a-b;}); bs.sort(function(a,b){return a-b;});
+  var m=rs.length>>1, br=rs[m], bg=gs[m], bb=bs[m];
+  function isBg(o){ var dr=img[o]-br, dg=img[o+1]-bg, db=img[o+2]-bb; return dr*dr+dg*dg+db*db<=tol2; }
+  var visited=new Uint8Array(n), queue=new Int32Array(n), qh=0, qt=0;
+  function push(px,py){ var pi2=py*w+px; if(!visited[pi2]&&isBg(pi2*4)){ visited[pi2]=1; queue[qt++]=pi2; } }
+  for(var x1=0;x1<w;x1++){ push(x1,0); push(x1,h-1); }
+  for(var y1=0;y1<h;y1++){ push(0,y1); push(w-1,y1); }
+  while(qh<qt){
+    var pi=queue[qh++], py2=(pi/w)|0, px2=pi-py2*w;
+    if(px2>0) push(px2-1,py2); if(px2<w-1) push(px2+1,py2);
+    if(py2>0) push(px2,py2-1); if(py2<h-1) push(px2,py2+1);
+  }
+  for(i=0;i<n;i++) mask[i]=visited[i]?0:1;
+  return mask;
+}
+/* clean_mask port: 5×5 binary median → largest blob → fill holes → close ×2 → erode 1 */
+function cleanMask(mask,w,h){
+  var n=w*h;
+  var sum=0; for(var s=0;s<n;s++) sum+=mask[s];
+  if(!sum) return mask;
+  mask=binMedian5(mask,w,h);
+  mask=largestBlob(mask,w,h);
+  mask=fillHoles(mask,w,h);
+  mask=morph(mask,w,h,1,2);      // dilate ×2
+  mask=morph(mask,w,h,0,2);      // erode ×2   (together = closing)
+  mask=morph(mask,w,h,0,1);      // trim halo
+  return mask;
+}
+function binMedian5(m,w,h){ // 5×5 majority via integral image
+  var ii=new Int32Array((w+1)*(h+1));
+  for(var y=0;y<h;y++){ var rs=0;
+    for(var x=0;x<w;x++){ rs+=m[y*w+x]; ii[(y+1)*(w+1)+x+1]=ii[y*(w+1)+x+1]+rs; } }
+  var out=new Uint8Array(w*h);
+  for(var y2=0;y2<h;y2++) for(var x2=0;x2<w;x2++){
+    var x0=Math.max(0,x2-2), y0=Math.max(0,y2-2), x1=Math.min(w-1,x2+2), y1=Math.min(h-1,y2+2);
+    var cnt=ii[(y1+1)*(w+1)+x1+1]-ii[y0*(w+1)+x1+1]-ii[(y1+1)*(w+1)+x0]+ii[y0*(w+1)+x0];
+    var area=(x1-x0+1)*(y1-y0+1);
+    out[y2*w+x2]=cnt*2>area?1:0;
+  }
+  return out;
+}
+function largestBlob(m,w,h){
+  var n=w*h, lbl=new Int32Array(n), queue=new Int32Array(n), best=0, bestId=0, id=0;
+  for(var i=0;i<n;i++){
+    if(!m[i]||lbl[i]) continue;
+    id++; var qh=0,qt=0; queue[qt++]=i; lbl[i]=id; var size=0;
+    while(qh<qt){ var pi=queue[qh++]; size++;
+      var py=(pi/w)|0, px=pi-py*w;
+      if(px>0&&m[pi-1]&&!lbl[pi-1]){lbl[pi-1]=id;queue[qt++]=pi-1;}
+      if(px<w-1&&m[pi+1]&&!lbl[pi+1]){lbl[pi+1]=id;queue[qt++]=pi+1;}
+      if(py>0&&m[pi-w]&&!lbl[pi-w]){lbl[pi-w]=id;queue[qt++]=pi-w;}
+      if(py<h-1&&m[pi+w]&&!lbl[pi+w]){lbl[pi+w]=id;queue[qt++]=pi+w;}
+    }
+    if(size>best){ best=size; bestId=id; }
+  }
+  var out=new Uint8Array(n);
+  for(var j=0;j<n;j++) out[j]=lbl[j]===bestId?1:0;
+  return out;
+}
+function fillHoles(m,w,h){
+  var n=w*h, visited=new Uint8Array(n), queue=new Int32Array(n), qh=0, qt=0;
+  function push(pi){ if(!visited[pi]&&!m[pi]){ visited[pi]=1; queue[qt++]=pi; } }
+  for(var x=0;x<w;x++){ push(x); push((h-1)*w+x); }
+  for(var y=0;y<h;y++){ push(y*w); push(y*w+w-1); }
+  while(qh<qt){ var pi=queue[qh++], py=(pi/w)|0, px=pi-py*w;
+    if(px>0)push(pi-1); if(px<w-1)push(pi+1); if(py>0)push(pi-w); if(py<h-1)push(pi+w); }
+  var out=new Uint8Array(n);
+  for(var i=0;i<n;i++) out[i]=(m[i]||!visited[i])?1:0;   // subject OR unreachable hole
+  return out;
+}
+function morph(m,w,h,dilate,iter){ // 3×3 cross
+  for(var it=0;it<iter;it++){
+    var out=new Uint8Array(w*h);
+    for(var y=0;y<h;y++) for(var x=0;x<w;x++){
+      var i=y*w+x;
+      var c=m[i], l=x>0?m[i-1]:0, r=x<w-1?m[i+1]:0, u=y>0?m[i-w]:0, d=y<h-1?m[i+w]:0;
+      out[i]=dilate ? (c|l|r|u|d) : (c&(x>0?l:1)&(x<w-1?r:1)&(y>0?u:1)&(y<h-1?d:1));
+    }
+    m=out;
+  }
+  return m;
+}
+
+/* ================= ASCII PIPELINE (port of frame_to_ascii) ================= */
+function frameToAscii(srcCanvas, cfg){
+  var w=srcCanvas.width, h=srcCanvas.height;
+  var ictx=srcCanvas.getContext("2d");
+  var img=ictx.getImageData(0,0,w,h).data;
+  var mask=cleanMask(computeMask(img,w,h,cfg.cut), w,h);
+  // bbox + pad
+  var minx=w,miny=h,maxx=-1,maxy=-1,i;
+  for(var y=0;y<h;y++) for(var x=0;x<w;x++) if(mask[y*w+x]){ if(x<minx)minx=x; if(x>maxx)maxx=x; if(y<miny)miny=y; if(y>maxy)maxy=y; }
+  if(maxx<0) return null;
+  var pad=5;
+  var x0=Math.max(0,minx-pad), x1=Math.min(w,maxx+pad), y0=Math.max(0,miny-pad), y1=Math.min(h,maxy+pad);
+  var bw=x1-x0, bh=y1-y0;
+  // luminance percentile stretch over subject pixels (4..96), via histogram
+  var hist=new Int32Array(256), cnt=0;
+  var lum=new Float32Array(bw*bh);
+  for(var yy=0;yy<bh;yy++) for(var xx=0;xx<bw;xx++){
+    var o=((y0+yy)*w+(x0+xx))*4;
+    var L=0.2126*img[o]+0.7152*img[o+1]+0.0722*img[o+2];
+    lum[yy*bw+xx]=L;
+    if(mask[(y0+yy)*w+(x0+xx)]){ hist[L|0]++; cnt++; }
+  }
+  var lo=0, hi=255;
+  if(cnt>0){
+    var t4=cnt*0.04, t96=cnt*0.96, acc=0, bfound=false;
+    for(i=0;i<256;i++){ acc+=hist[i]; if(!bfound&&acc>=t4){ lo=i; bfound=true; } if(acc>=t96){ hi=i; break; } }
+  }
+  if(hi<=lo) hi=lo+1;
+  // grid geometry
+  var padX=Math.max(1,Math.round(cfg.cols*0.06));
+  var padT=Math.max(1,Math.round(cfg.rows*0.06));
+  var padB=Math.max(1,Math.round(cfg.rows*0.048));
+  var usableW=(cfg.cols-2*padX)*0.5, usableH=cfg.rows-padT-padB;
+  var scale=Math.min(usableW/bw, usableH/bh);
+  var dw=Math.max(1,Math.round(bw*scale/0.5)), dh=Math.max(1,Math.round(bh*scale));
+  // build normalized-luminance canvas + mask canvas + color canvas, downscale via canvas (≈Lanczos-ish)
+  var lc=document.createElement("canvas"); lc.width=bw; lc.height=bh;
+  var lx=lc.getContext("2d"); var lid=lx.createImageData(bw,bh);
+  var mc=document.createElement("canvas"); mc.width=bw; mc.height=bh;
+  var mx=mc.getContext("2d"); var mid=mx.createImageData(bw,bh);
+  var cc=document.createElement("canvas"); cc.width=bw; cc.height=bh;
+  var cx2=cc.getContext("2d"); var cid=cx2.createImageData(bw,bh);
+  for(var p=0;p<bw*bh;p++){
+    var py=(p/bw)|0, px=p-py*bw;
+    var so=((y0+py)*w+(x0+px))*4;
+    var nl=clamp((lum[p]-lo)/(hi-lo),0,1)*255;
+    lid.data[p*4]=nl; lid.data[p*4+1]=nl; lid.data[p*4+2]=nl; lid.data[p*4+3]=255;
+    var mv=mask[(y0+py)*w+(x0+px)]?255:0;
+    mid.data[p*4]=mv; mid.data[p*4+1]=mv; mid.data[p*4+2]=mv; mid.data[p*4+3]=255;
+    cid.data[p*4]=img[so]; cid.data[p*4+1]=img[so+1]; cid.data[p*4+2]=img[so+2]; cid.data[p*4+3]=255;
+  }
+  lx.putImageData(lid,0,0); mx.putImageData(mid,0,0); cx2.putImageData(cid,0,0);
+  function shrink(c){
+    var s=document.createElement("canvas"); s.width=dw; s.height=dh;
+    var sx=s.getContext("2d"); sx.imageSmoothingEnabled=true; sx.imageSmoothingQuality="high";
+    sx.drawImage(c,0,0,dw,dh);
+    return sx.getImageData(0,0,dw,dh).data;
+  }
+  var Ld=shrink(lc), Md=shrink(mc), Cd=shrink(cc);
+  // place on grid: centered, feet on the floor
+  var ox=Math.round((cfg.cols-dw)/2), oy=cfg.rows-padB-dh;
+  var chars=[], colors=[];
+  for(var gy=0;gy<cfg.rows;gy++){ var rowc=new Array(cfg.cols), rowk=new Array(cfg.cols);
+    for(var gx=0;gx<cfg.cols;gx++){ rowc[gx]=" "; rowk[gx]=null; }
+    chars.push(rowc); colors.push(rowk);
+  }
+  var ramp=cfg.ramp, span=ramp.length-2;
+  var invG=(cfg.gamma&&cfg.gamma>0)?1/cfg.gamma:1;
+  for(var dy=0;dy<dh;dy++) for(var dx=0;dx<dw;dx++){
+    var di=(dy*dw+dx)*4;
+    if(Md[di]<128) continue;
+    var t=Ld[di]/255;
+    if(invG!==1) t=Math.pow(t,invG);
+    var idx=1+Math.round(t*span);                 // 1.. → never blank (SOLID FILL)
+    var ggy=oy+dy, ggx=ox+dx;
+    if(ggy>=0&&ggy<cfg.rows&&ggx>=0&&ggx<cfg.cols){
+      chars[ggy][ggx]=ramp[idx];
+      colors[ggy][ggx]=Cd[di]+","+Cd[di+1]+","+Cd[di+2];
+    }
+  }
+  despeckle(chars,colors);
+  if(cfg.flip){
+    for(var fy=0;fy<cfg.rows;fy++){ chars[fy].reverse(); colors[fy].reverse(); }
+  }
+  return {chars:chars.map(function(r){return r.join("");}), colors:colors};
+}
+function despeckle(chars,colors){
+  var rows=chars.length, cols=chars[0].length;
+  for(var gy=0;gy<rows;gy++) for(var gx=0;gx<cols;gx++){
+    if(chars[gy][gx]===" ") continue;
+    var keep=false;
+    if(gy>0&&chars[gy-1][gx]!==" ")keep=true;
+    else if(gy<rows-1&&chars[gy+1][gx]!==" ")keep=true;
+    else if(gx>0&&chars[gy][gx-1]!==" ")keep=true;
+    else if(gx<cols-1&&chars[gy][gx+1]!==" ")keep=true;
+    if(!keep){ chars[gy][gx]=" "; colors[gy][gx]=null; }
+  }
+}
+
+/* ================= RENDER (frame → canvas, sheet) ================= */
+var CW=4, CH=8;
+function renderFrame(fr, cfg){
+  var W=fr.chars[0].length, H=fr.chars.length;
+  var c=document.createElement("canvas"); c.width=W*CW; c.height=H*CH;
+  var x=c.getContext("2d");
+  x.fillStyle=cfg.bg; x.fillRect(0,0,c.width,c.height);
+  x.font="8px monospace"; x.textBaseline="top";
+  var flat=cfg.mode!=="color", fg=cfg.tint;
+  if(flat) x.fillStyle=fg;
+  for(var gy=0;gy<H;gy++){
+    var row=fr.chars[gy], col=fr.colors[gy];
+    for(var gx=0;gx<W;gx++){
+      var ch=row[gx]; if(ch===" ") continue;
+      if(!flat){ var cs=col[gx]; x.fillStyle=cs?("rgb("+cs+")"):fg; }
+      x.fillText(ch, gx*CW, gy*CH);
+    }
+  }
+  return c;
+}
+function renderSheet(canvases, title, cfg){
+  var cols=Math.min(5,canvases.length), fw=canvases[0].width, fh=canvases[0].height;
+  var rows=Math.ceil(canvases.length/cols), pad=6, top=26;
+  var c=document.createElement("canvas");
+  c.width=cols*fw+(cols+1)*pad; c.height=top+rows*fh+(rows+1)*pad;
+  var x=c.getContext("2d");
+  x.fillStyle="#0a0e0c"; x.fillRect(0,0,c.width,c.height);
+  x.fillStyle=cfg.mode==="color"?"#e8e8e8":cfg.tint; x.font="bold 13px monospace"; x.textBaseline="top";
+  x.fillText(title+"  -  "+canvases.length+" frames", pad, 6);
+  for(var i=0;i<canvases.length;i++){
+    var cx=pad+(i%cols)*(fw+pad), cy=top+pad+((i/cols)|0)*(fh+pad);
+    x.strokeStyle="#1e3c2b"; x.strokeRect(cx-0.5,cy-0.5,fw+1,fh+1);
+    x.drawImage(canvases[i],cx,cy);
+  }
+  return c;
+}
+
+/* ================= GIF ENCODER (GIF89a, median-cut + LZW) ================= */
+function encodeGif(canvases, delayMs){
+  var W=canvases[0].width, H=canvases[0].height, nf=canvases.length;
+  // gather frames' pixels
+  var frames=[], f;
+  for(f=0;f<nf;f++) frames.push(canvases[f].getContext("2d").getImageData(0,0,W,H).data);
+  // ---- palette: median cut over sampled pixels ----
+  var samples=[], step=Math.max(1,Math.floor(W*H*nf/60000));
+  for(f=0;f<nf;f++){ var d=frames[f];
+    for(var i=0;i<W*H;i+=step){ var o=i*4; samples.push([d[o],d[o+1],d[o+2]]); } }
+  var boxes=[samples];
+  while(boxes.length<256){
+    // split the box with the largest channel range
+    var bi=-1, br=-1, bc=0;
+    for(var b2=0;b2<boxes.length;b2++){
+      var bx=boxes[b2]; if(bx.length<2) continue;
+      for(var ch2=0;ch2<3;ch2++){
+        var mn=255,mx=0;
+        for(var s2=0;s2<bx.length;s2++){ var v=bx[s2][ch2]; if(v<mn)mn=v; if(v>mx)mx=v; }
+        if(mx-mn>br){ br=mx-mn; bi=b2; bc=ch2; }
+      }
+    }
+    if(bi<0||br<1) break;
+    var box=boxes[bi];
+    box.sort(function(a,b){return a[bc]-b[bc];});
+    var half=box.length>>1;
+    boxes.splice(bi,1,box.slice(0,half),box.slice(half));
+  }
+  var pal=[];
+  for(var b3=0;b3<boxes.length;b3++){
+    var bx3=boxes[b3]; if(!bx3.length) continue;
+    var r=0,g=0,bl=0;
+    for(var s3=0;s3<bx3.length;s3++){ r+=bx3[s3][0]; g+=bx3[s3][1]; bl+=bx3[s3][2]; }
+    pal.push([Math.round(r/bx3.length),Math.round(g/bx3.length),Math.round(bl/bx3.length)]);
+  }
+  while(pal.length<2) pal.push([0,0,0]);
+  var palSizeBits=1; while((1<<palSizeBits)<pal.length) palSizeBits++;
+  var palN=1<<palSizeBits;
+  // nearest-color cache on 5-bit quantized key
+  var cache=new Int16Array(32768); cache.fill(-1);
+  function nearest(r,g,b){
+    var key=((r>>3)<<10)|((g>>3)<<5)|(b>>3);
+    var c=cache[key]; if(c>=0) return c;
+    var best=0, bd=1e9;
+    for(var pi=0;pi<pal.length;pi++){
+      var dr=pal[pi][0]-r, dg=pal[pi][1]-g, db=pal[pi][2]-b, dd=dr*dr+dg*dg+db*db;
+      if(dd<bd){ bd=dd; best=pi; }
+    }
+    cache[key]=best; return best;
+  }
+  // ---- write ----
+  var out=[], push=function(v){ out.push(v&255); };
+  function pushStr(s){ for(var i2=0;i2<s.length;i2++) push(s.charCodeAt(i2)); }
+  function push16(v){ push(v&255); push((v>>8)&255); }
+  pushStr("GIF89a"); push16(W); push16(H);
+  push(0x80|((palSizeBits-1)&7)|0x70); push(0); push(0);       // GCT flag + size, bg=0
+  for(var pi2=0;pi2<palN;pi2++){ var pc=pal[pi2]||[0,0,0]; push(pc[0]); push(pc[1]); push(pc[2]); }
+  // loop forever
+  push(0x21); push(0xFF); push(11); pushStr("NETSCAPE2.0"); push(3); push(1); push16(0); push(0);
+  var delay=Math.round(delayMs/10);
+  var mcs=Math.max(2,palSizeBits);
+  for(f=0;f<nf;f++){
+    push(0x21); push(0xF9); push(4); push(4); push16(delay); push(0); push(0);   // GCE disposal=1
+    push(0x2C); push16(0); push16(0); push16(W); push16(H); push(0);             // no LCT
+    // index frame
+    var d2=frames[f], idx=new Uint8Array(W*H);
+    for(var p2=0;p2<W*H;p2++){ var o2=p2*4; idx[p2]=nearest(d2[o2],d2[o2+1],d2[o2+2]); }
+    push(mcs);
+    lzwEncode(idx, mcs, out);
+    push(0);
+  }
+  push(0x3B);
+  return new Uint8Array(out);
+}
+function lzwEncode(indices, minCode, out){
+  var clear=1<<minCode, eoi=clear+1;
+  var size=minCode+1, next=eoi+1;
+  var dict=new Map();
+  var cur=0, bits=0, sub=[];
+  function emit(code){
+    cur|=code<<bits; bits+=size;
+    while(bits>=8){ sub.push(cur&255); cur>>=8; bits-=8;
+      if(sub.length===255){ out.push(255); for(var i=0;i<255;i++) out.push(sub[i]); sub=[]; } }
+  }
+  function flushSub(){
+    if(bits>0){ sub.push(cur&255); cur=0; bits=0; }
+    if(sub.length){ out.push(sub.length); for(var i=0;i<sub.length;i++) out.push(sub[i]); sub=[]; }
+  }
+  emit(clear);
+  var prev=indices[0];
+  for(var i2=1;i2<indices.length;i2++){
+    var k=indices[i2], key=prev*256+k;
+    if(dict.has(key)){ prev=dict.get(key); continue; }
+    emit(prev);
+    dict.set(key,next); next++;
+    if(next===(1<<size)+1 && size<12) size++;
+    if(next>=4096){ emit(clear); dict.clear(); size=minCode+1; next=eoi+1; }
+    prev=k;
+  }
+  emit(prev); emit(eoi);
+  flushSub();
+}
+
+/* ================= SOURCES: file → frame canvases ================= */
+var MAXSIDE=900;
+function fitCanvas(w,h){ var s=Math.min(1,MAXSIDE/Math.max(w,h)); return {w:Math.max(1,Math.round(w*s)), h:Math.max(1,Math.round(h*s))}; }
+function drawToCanvas(src,w,h){
+  var f=fitCanvas(w,h);
+  var c=document.createElement("canvas"); c.width=f.w; c.height=f.h;
+  var x=c.getContext("2d"); x.imageSmoothingQuality="high";
+  x.drawImage(src,0,0,f.w,f.h);
+  return c;
+}
+function loadImage(file){
+  return new Promise(function(res,rej){
+    var url=URL.createObjectURL(file), im=new Image();
+    im.onload=function(){ res(im); setTimeout(function(){URL.revokeObjectURL(url);},2000); };
+    im.onerror=function(){ rej(new Error("couldn't read that image")); };
+    im.src=url;
+  });
+}
+async function framesFromFile(file, cfg, progress){
+  var name=(file.name||"sprite").replace(/\.[^.]+$/,"");
+  var isGif=/\.gif$/i.test(file.name||"")||file.type==="image/gif";
+  var isVideo=/^video\//.test(file.type)||/\.(mp4|webm|mov|m4v)$/i.test(file.name||"");
+  var out=[];
+  if(isGif){
+    var buf=await file.arrayBuffer();
+    var gif=decodeGif(buf);
+    if(!gif.frames.length) throw new Error("empty GIF");
+    var picks=evenPicks(gif.frames.length, cfg.maxFrames);
+    var full=document.createElement("canvas"); full.width=gif.width; full.height=gif.height;
+    var fx=full.getContext("2d");
+    for(var i=0;i<picks.length;i++){
+      var fr=gif.frames[picks[i]];
+      fx.putImageData(new ImageData(new Uint8ClampedArray(fr.data), gif.width, gif.height),0,0);
+      out.push(drawToCanvas(full,gif.width,gif.height));
+      if(progress) progress((i+1)/picks.length*0.35);
+    }
+    return {name:name, frames:out, srcDelay:gif.frames[0].delay};
+  }
+  if(isVideo){
+    var url=URL.createObjectURL(file);
+    var v=document.createElement("video");
+    v.muted=true; v.playsInline=true; v.preload="auto"; v.src=url;
+    await new Promise(function(res,rej){
+      v.onloadedmetadata=res;
+      v.onerror=function(){ rej(new Error("this browser can't decode that video format — try MP4 (H.264) or WebM")); };
+      setTimeout(function(){ rej(new Error("video took too long to open")); },15000);
+    });
+    var dur=v.duration&&isFinite(v.duration)?v.duration:2;
+    var n=clamp(Math.round(dur*cfg.fps),1,cfg.maxFrames);
+    for(var j=0;j<n;j++){
+      var t=n===1?dur/2:(j+0.5)*dur/n;
+      await seekVideo(v,t);
+      out.push(drawToCanvas(v,v.videoWidth,v.videoHeight));
+      if(progress) progress((j+1)/n*0.35);
+    }
+    URL.revokeObjectURL(url);
+    if(!out.length) throw new Error("couldn't pull frames from that video");
+    return {name:name, frames:out, srcDelay:Math.round(1000/cfg.fps)};
+  }
+  // still image
+  var im=await loadImage(file);
+  var base=drawToCanvas(im,im.naturalWidth,im.naturalHeight);
+  if(cfg.breathe){
+    for(var k=0;k<8;k++){
+      var s=1+0.02*Math.sin(2*Math.PI*k/8);
+      var c2=document.createElement("canvas"); c2.width=base.width; c2.height=base.height;
+      var x2=c2.getContext("2d");
+      var nh=base.height*s;
+      x2.drawImage(base,0,base.height-nh,base.width,nh);   // anchored at the floor
+      out.push(c2);
+    }
+  } else out.push(base);
+  return {name:name, frames:out, srcDelay:120};
+}
+function evenPicks(total, max){
+  if(total<=max){ var all=[]; for(var i=0;i<total;i++) all.push(i); return all; }
+  var picks=[], step=total/max;
+  for(var j=0;j<max;j++) picks.push(Math.min(total-1,Math.round(j*step)));
+  return picks;
+}
+function seekVideo(v,t){
+  return new Promise(function(res){
+    var done=false;
+    function ok(){ if(!done){ done=true; res(); } }
+    v.onseeked=ok;
+    v.currentTime=Math.min(t, Math.max(0,(v.duration||t)-0.05));
+    setTimeout(ok,900);   // fallback if 'seeked' never fires
+  });
+}
+
+/* ================= APP STATE + UI ================= */
+var S={
+  file:null, demo:false, name:"sprite",
+  src:[], ascii:[], rendered:[],
+  playing:true, fi:0, zoom:1, lastTick:0,
+  cfg:{
+    cols:150, rows:84, charsetName:"classic", ramp:CHARSETS.classic, invert:false,
+    gamma:1.0, mode:"color", tint:"#7cffb2", bg:"#070b09",
+    cut:{mode:"auto", tol:42}, maxFrames:16, fps:6, delay:120, flip:false, breathe:false
+  },
+  dirty:false, busy:false
+};
+function status(msg, isErr){ var el=$("#status"); el.innerHTML=msg; el.className=isErr?"err":""; }
+function pbar(f){ var p=$("#pbar"); if(f==null){ p.style.display="none"; return; }
+  p.style.display="block"; p.firstElementChild.style.width=Math.round(f*100)+"%"; }
+function markDirty(){ S.dirty=true; var b=$("#rerun"); b.disabled=!(S.file||S.demo); }
+
+/* re-render (cheap: color/bg/delay changes) */
+function rerender(){
+  S.rendered=S.ascii.map(function(fr){ return renderFrame(fr,S.cfg); });
+  sizeView();
+  drawCurrent();
+}
+function sizeView(){
+  if(!S.rendered.length) return;
+  var c=$("#view"), r0=S.rendered[0];
+  c.width=r0.width; c.height=r0.height;
+  c.style.width=(r0.width*S.zoom)+"px";
+  $("#zoomN").textContent="×"+S.zoom;
+}
+function drawCurrent(){
+  if(!S.rendered.length) return;
+  var c=$("#view"), x=c.getContext("2d");
+  x.clearRect(0,0,c.width,c.height);
+  x.drawImage(S.rendered[S.fi],0,0);
+  $("#frameN").textContent=(S.fi+1)+"/"+S.rendered.length;
+  $("#scrub").max=S.rendered.length-1; $("#scrub").value=S.fi;
+}
+function tick(ts){
+  if(S.playing&&S.rendered.length>1){
+    if(ts-S.lastTick>=S.cfg.delay){ S.lastTick=ts; S.fi=(S.fi+1)%S.rendered.length; drawCurrent(); }
+  }
+  requestAnimationFrame(tick);
+}
+
+/* full conversion */
+async function convert(){
+  if(S.busy) return;
+  var source=S.demo?{demo:true}:S.file;
+  if(!source) return;
+  S.busy=true; S.dirty=false; $("#rerun").disabled=true;
+  status("Reading frames…"); pbar(0.02);
+  try{
+    var got;
+    if(S.demo){ got=demoSource(); }
+    else{ got=await framesFromFile(S.file,{maxFrames:S.cfg.maxFrames,fps:S.cfg.fps,breathe:S.cfg.breathe},pbar); }
+    S.name=got.name; S.src=got.frames;
+    if(got.srcDelay&&!S.demo){ /* keep user's speed slider as-is; srcDelay informs default only */ }
+    var cfg={cols:S.cfg.cols, rows:S.cfg.rows, ramp:effRamp(), gamma:S.cfg.gamma, cut:S.cfg.cut, flip:S.cfg.flip};
+    var frames=[], nulls=0;
+    for(var i=0;i<S.src.length;i++){
+      status("Converting frame "+(i+1)+"/"+S.src.length+"…");
+      pbar(0.35+0.6*(i+1)/S.src.length);
+      await new Promise(function(r){ requestAnimationFrame(r); });
+      var fr=frameToAscii(S.src[i],cfg);
+      if(fr) frames.push(fr); else nulls++;
+    }
+    if(!frames.length && S.cfg.cut.mode==="auto"){
+      status("No clean subject found — converting the whole frame instead…");
+      var cfg2=Object.assign({},cfg,{cut:{mode:"full",tol:S.cfg.cut.tol}});
+      for(var i2=0;i2<S.src.length;i2++){
+        var fr2=frameToAscii(S.src[i2],cfg2);
+        if(fr2) frames.push(fr2);
+      }
+    }
+    if(!frames.length) throw new Error("couldn't convert that file");
+    S.ascii=frames; S.fi=0;
+    rerender();
+    $("#drop").style.display="none"; $("#stage").style.display="flex";
+    var extra=nulls?(" ("+nulls+" empty frame"+(nulls>1?"s":"")+" skipped)"):"";
+    status("<b>"+esc(S.name)+"</b> — "+frames.length+" frame"+(frames.length>1?"s":"")+" at "+S.cfg.cols+"×"+S.cfg.rows+extra+". Downloads are ready below.");
+  }catch(e){
+    status("✖ "+esc(e.message||String(e))+" — try another file, or the “Keep background” mode.",true);
+  }
+  pbar(null); S.busy=false; markDirty(); $("#rerun").disabled=true; S.dirty=false;
+}
+function effRamp(){ var r=CHARSETS[S.cfg.charsetName]||CHARSETS.classic; return S.cfg.invert?invertRamp(r):r; }
+function esc(s){ return String(s).replace(/[<>&]/g,function(c){return {"<":"&lt;",">":"&gt;","&":"&amp;"}[c];}); }
+
+/* demo source: a friendly cat, tail wags across 3 frames, flat gray bg */
+function demoSource(){
+  var frames=[];
+  for(var f=0;f<3;f++){
+    var c=document.createElement("canvas"); c.width=460; c.height=400;
+    var x=c.getContext("2d");
+    x.fillStyle="#8a8a8a"; x.fillRect(0,0,460,400);            // flat gray backdrop
+    var g=x.createLinearGradient(0,80,0,380);
+    g.addColorStop(0,"#e8dcc8"); g.addColorStop(0.55,"#b09a72"); g.addColorStop(1,"#5c4a30");
+    x.fillStyle=g;
+    x.beginPath(); x.ellipse(230,300,95,72,0,0,7); x.fill();   // body
+    x.beginPath(); x.ellipse(230,190,62,58,0,0,7); x.fill();   // head
+    x.beginPath(); x.moveTo(180,155); x.lineTo(196,102); x.lineTo(222,142); x.closePath(); x.fill();  // ears
+    x.beginPath(); x.moveTo(280,155); x.lineTo(264,102); x.lineTo(238,142); x.closePath(); x.fill();
+    x.strokeStyle="#7a6244"; x.lineWidth=20; x.lineCap="round";
+    var wag=[-0.5,0,0.5][f];
+    x.beginPath(); x.moveTo(292,296);                          // starts inside the body
+    x.quadraticCurveTo(392,300+wag*40, 396,242+wag*66);        // wagging tail
+    x.stroke();
+    x.fillStyle="#2c2418";
+    x.beginPath(); x.ellipse(208,182,7,10,0,0,7); x.fill();    // eyes
+    x.beginPath(); x.ellipse(252,182,7,10,0,0,7); x.fill();
+    x.beginPath(); x.ellipse(230,208,6,4,0,0,7); x.fill();     // nose
+    x.fillStyle="#efe6d4";
+    x.beginPath(); x.ellipse(196,330,26,40,0.2,0,7); x.fill(); // front paws
+    x.beginPath(); x.ellipse(258,332,26,40,-0.2,0,7); x.fill();
+    frames.push(c);
+  }
+  return {name:"demo-cat", frames:frames, srcDelay:160};
+}
+
+/* ================= EXPORTS ================= */
+function dl(blob,name){
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); },4000);
+}
+function exportGif(){
+  if(!S.rendered.length) return;
+  status("Encoding GIF…");
+  setTimeout(function(){
+    var bytes=encodeGif(S.rendered,S.cfg.delay);
+    dl(new Blob([bytes],{type:"image/gif"}), S.name+".gif");
+    status("Saved <b>"+esc(S.name)+".gif</b> ("+Math.round(bytes.length/1024)+" KB) — post it anywhere.");
+  },30);
+}
+function exportSheet(){
+  if(!S.rendered.length) return;
+  renderSheet(S.rendered,S.name.toUpperCase(),S.cfg).toBlob(function(b){ dl(b,S.name+".sheet.png"); });
+  status("Saved <b>"+esc(S.name)+".sheet.png</b>");
+}
+function exportPng(){
+  if(!S.rendered.length) return;
+  S.rendered[S.fi].toBlob(function(b){ dl(b,S.name+"_f"+(S.fi+1)+".png"); });
+}
+function exportJson(){
+  if(!S.ascii.length) return;
+  var data={}; data[S.name]=S.ascii;
+  dl(new Blob([JSON.stringify(data)],{type:"application/json"}), S.name+".frames.json");
+  status("Saved <b>"+esc(S.name)+".frames.json</b> — drop it on tools/player.html or feed it to your engine.");
+}
+function frameText(fr){ return fr.chars.map(function(r){return r.replace(/\s+$/,"");}).join("\n"); }
+function copyText(){
+  if(!S.ascii.length) return;
+  var t=frameText(S.ascii[S.fi]);
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(
+    function(){ status("Frame copied as plain text — paste it in a chat, a README, anywhere."); },
+    function(){ status("Clipboard blocked — use frames.json instead.",true); });
+}
+function flipNow(){
+  S.cfg.flip=!S.cfg.flip;
+  $("#flip").classList.toggle("on",S.cfg.flip);
+  if(!S.ascii.length) return;
+  S.ascii=S.ascii.map(function(fr){
+    return {chars:fr.chars.map(function(r){return r.split("").reverse().join("");}),
+            colors:fr.colors.map(function(r){return r.slice().reverse();})};
+  });
+  rerender();
+}
+
+/* ================= WIRING ================= */
+function segWire(id, fn){
+  var seg=$(id);
+  Array.prototype.forEach.call(seg.querySelectorAll("button"),function(b){
+    b.onclick=function(){
+      Array.prototype.forEach.call(seg.querySelectorAll("button"),function(o){o.classList.remove("on");});
+      b.classList.add("on"); fn(b.dataset.m);
+    };
+  });
+}
+function init(){
+  // charset dropdown
+  var cs=$("#charset");
+  Object.keys(CHARSETS).forEach(function(k){
+    var o=document.createElement("option"); o.value=k;
+    o.textContent=k+"  "+CHARSETS[k].slice(1,9); cs.appendChild(o);
+  });
+  cs.value="classic";
+  cs.onchange=function(){ S.cfg.charsetName=this.value; markDirty(); };
+  // tints
+  var tw=$("#tints");
+  Object.keys(TINTS).forEach(function(k){
+    var d=document.createElement("div"); d.className="sw"; d.title=k;
+    d.style.background=rgbToHex(TINTS[k]); d.dataset.k=k;
+    d.onclick=function(){
+      S.cfg.tint=rgbToHex(TINTS[k]); $("#tintPick").value=S.cfg.tint;
+      Array.prototype.forEach.call(tw.children,function(o){o.classList.remove("on");});
+      d.classList.add("on"); rerender();
+    };
+    tw.appendChild(d);
+  });
+  tw.firstChild.classList.add("on");
+  $("#tintPick").oninput=function(){ S.cfg.tint=this.value;
+    Array.prototype.forEach.call(tw.children,function(o){o.classList.remove("on");}); rerender(); };
+  $("#bgPick").oninput=function(){ S.cfg.bg=this.value; rerender(); };
+  $("#bgDark").onclick=function(){ S.cfg.bg="#070b09"; $("#bgPick").value="#070b09"; rerender(); };
+  $("#bgBlack").onclick=function(){ S.cfg.bg="#000000"; $("#bgPick").value="#000000"; rerender(); };
+  $("#bgWhite").onclick=function(){ S.cfg.bg="#f4f1e6"; $("#bgPick").value="#f4f1e6"; rerender(); };
+  // segments
+  segWire("#colorMode",function(m){ S.cfg.mode=m;
+    $("#tintRow").style.display=m==="tint"?"flex":"none";
+    $("#tintRow2").style.display=m==="tint"?"flex":"none";
+    rerender(); });
+  segWire("#cutMode",function(m){ S.cfg.cut.mode=m; $("#tolRow").style.display=m==="auto"?"flex":"none"; markDirty(); });
+  // sliders
+  function slide(id,nid,fn,fmt){
+    $(id).oninput=function(){ $(nid).textContent=fmt?fmt(this.value):this.value; fn(+this.value); };
+  }
+  slide("#cols","#colsN",function(v){ S.cfg.cols=v; markDirty(); });
+  slide("#rows","#rowsN",function(v){ S.cfg.rows=v; markDirty(); });
+  slide("#gamma","#gammaN",function(v){ S.cfg.gamma=v/100; markDirty(); },function(v){ return (v/100).toFixed(1); });
+  slide("#tol","#tolN",function(v){ S.cfg.cut.tol=v; markDirty(); });
+  slide("#maxFrames","#maxFramesN",function(v){ S.cfg.maxFrames=v; markDirty(); });
+  slide("#fps","#fpsN",function(v){ S.cfg.fps=v; markDirty(); });
+  slide("#delay","#delayN",function(v){ S.cfg.delay=v; },function(v){ return v+"ms"; });
+  $("#invert").onclick=function(){ S.cfg.invert=!S.cfg.invert; this.classList.toggle("on",S.cfg.invert); markDirty(); };
+  $("#breathe").onclick=function(){ S.cfg.breathe=!S.cfg.breathe; this.classList.toggle("on",S.cfg.breathe); markDirty(); };
+  $("#flip").onclick=flipNow;
+  $("#rerun").onclick=convert;
+  // file handling
+  var drop=$("#drop");
+  $("#pick").onclick=function(e){ e.stopPropagation(); $("#file").click(); };
+  drop.onclick=function(){ $("#file").click(); };
+  $("#demo").onclick=function(e){ e.stopPropagation(); S.demo=true; S.file=null; convert(); };
+  $("#file").onchange=function(){ if(this.files[0]){ S.file=this.files[0]; S.demo=false; convert(); this.value=""; } };
+  ["dragenter","dragover"].forEach(function(ev){
+    document.addEventListener(ev,function(e){ e.preventDefault(); drop.classList.add("on"); });
+  });
+  ["dragleave","drop"].forEach(function(ev){
+    document.addEventListener(ev,function(e){ e.preventDefault(); if(ev==="dragleave"&&e.target!==document.documentElement) return; drop.classList.remove("on"); });
+  });
+  document.addEventListener("drop",function(e){
+    e.preventDefault(); drop.classList.remove("on");
+    var f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+    if(f){ S.file=f; S.demo=false; convert(); }
+  });
+  // player
+  $("#play").onclick=function(){ S.playing=!S.playing; this.textContent=S.playing?"❚❚ Pause":"► Play"; };
+  $("#scrub").oninput=function(){ S.playing=false; $("#play").textContent="► Play"; S.fi=+this.value; drawCurrent(); };
+  $("#zoomIn").onclick=function(){ S.zoom=Math.min(4,S.zoom+1); sizeView(); };
+  $("#zoomOut").onclick=function(){ S.zoom=Math.max(1,S.zoom-1); sizeView(); };
+  $("#newFile").onclick=function(){ $("#stage").style.display="none"; $("#drop").style.display="flex"; status("Drop the next file whenever you're ready."); };
+  // exports
+  $("#dlGif").onclick=exportGif; $("#dlSheet").onclick=exportSheet;
+  $("#dlPng").onclick=exportPng; $("#dlJson").onclick=exportJson; $("#copyTxt").onclick=copyText;
+  requestAnimationFrame(tick);
+}
+init();
+
+/* exposed for tinkerers, game devs and tests */
+window.JAMM={S:S, CHARSETS:CHARSETS, TINTS:TINTS,
+  decodeGif:decodeGif, encodeGif:encodeGif, frameToAscii:frameToAscii,
+  computeMask:computeMask, cleanMask:cleanMask, renderFrame:renderFrame,
+  framesFromFile:framesFromFile, convert:convert, frameText:frameText, invertRamp:invertRamp};
+</script>
+</body>
+</html>

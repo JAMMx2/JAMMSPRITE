@@ -16,6 +16,19 @@ except ImportError as e:  # pragma: no cover
     )
 
 
+class _ListCharsets(argparse.Action):
+    """--list-charsets: preview the built-in glyph styles and exit (no input needed)."""
+
+    def __init__(self, option_strings, dest, **kw):
+        super().__init__(option_strings, dest, nargs=0, **kw)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print("glyph styles (dark -> bright; use --charset NAME):\n")
+        for name in sorted(core.CHARSETS):
+            print(f"  {name:9s} {core.CHARSETS[name]}")
+        parser.exit()
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="jammsprite",
@@ -27,7 +40,15 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--out", default="out", help="output directory (default: ./out)")
     ap.add_argument("--cols", type=int, default=150)
     ap.add_argument("--rows", type=int, default=84)
-    ap.add_argument("--ramp", default=None, help="characters, dark -> bright")
+    ap.add_argument("--ramp", default=None, help="characters, dark -> bright (overrides --charset)")
+    ap.add_argument("--charset", default=None,
+                    help=f"named glyph style: {sorted(core.CHARSETS)} (or pass a literal ramp)")
+    ap.add_argument("--list-charsets", action=_ListCharsets,
+                    help="print the built-in glyph styles with a preview and exit")
+    ap.add_argument("--gamma", type=float, default=1.0,
+                    help="tone/detail curve: >1 brightens midtones (denser), <1 deepens shadows (default 1.0)")
+    ap.add_argument("--invert", action="store_true",
+                    help="flip the ramp dark<->bright (light-on-dark subjects)")
     ap.add_argument("--start", type=float, default=0.0, help="video: window start (s)")
     ap.add_argument("--dur", type=float, default=0.0, help="video: window length (s), 0 = whole clip")
     ap.add_argument("--fps", type=float, default=6.0, help="video: sampling rate")
@@ -53,9 +74,17 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None):
     a = build_parser().parse_args(argv)
 
-    cfg = core.Config(cols=a.cols, rows=a.rows, model=a.model)
+    cfg = core.Config(cols=a.cols, rows=a.rows, model=a.model, gamma=a.gamma)
+    # Glyph ramp: explicit --ramp wins, else a named/literal --charset, else default.
     if a.ramp:
         cfg.ramp = a.ramp
+    elif a.charset:
+        try:
+            cfg.ramp = core.parse_charset(a.charset)
+        except ValueError as e:
+            sys.exit(str(e))
+    if a.invert:
+        cfg.ramp = core.invert_ramp(cfg.ramp)
     try:
         cfg.fg = core.parse_tint(a.tint)
     except ValueError as e:
