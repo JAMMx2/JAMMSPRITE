@@ -44,6 +44,12 @@ TINTS = {
     "white": (235, 235, 235),
     "red": (255, 110, 110),
     "matrix": (0, 255, 70),
+    "blue": (90, 160, 255),
+    "purple": (200, 140, 255),
+    "pink": (255, 140, 200),
+    "orange": (255, 150, 60),
+    "lime": (170, 255, 80),
+    "ice": (200, 235, 255),
 }
 
 #: Named glyph-ramp presets (dark -> bright). The FIRST character is a reserved

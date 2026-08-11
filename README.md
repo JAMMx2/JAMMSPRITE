@@ -20,6 +20,22 @@ rendered in phosphor-green ASCII.
 
 ---
 
+## ⚡ Use it in your browser — zero install
+
+**[Download index.html](https://github.com/JAMMx2/JAMMSPRITE/raw/main/index.html)** → double-click it. That's the whole install.
+
+**JAMMSPRITE Web** is the entire pipeline in one offline HTML file:
+
+- Drop a **photo, animated GIF, or short video** (PNG/JPG/WebP/GIF/MP4/WebM) — nothing is uploaded anywhere.
+- **Auto cutout** uses transparency when your image has it, otherwise it lifts the subject off a flat background — or hit **Keep background** to convert the whole frame.
+- **Full color** straight from your source, or any of **12 tint presets** (green, amber, cyan, white, red, matrix, blue, purple, pink, orange, lime, ice) — plus a picker for *any* color, and your choice of background.
+- All 9 glyph styles, gamma detail curve, invert, flip, breathe-motion for stills.
+- Export an **animated GIF**, a **sprite sheet PNG**, a single frame, **`frames.json`** (drops straight into `tools/player.html` or your game engine), or copy a frame as plain text.
+
+The command line below is the power version — bigger batches, the ML background removal, scripting.
+
+---
+
 ## Why it looks good
 
 Most "image to ASCII" scripts just map pixel brightness to characters and call
@@ -126,7 +142,7 @@ Each run writes to `./out/` (override with `--out`):
 | `--frames` | `16` | max frames to keep |
 | `--breathe N` | off | still image: synthesise `N` gently breathing frames |
 | `--color` | off | render GIF/sheet in full colour |
-| `--tint` | `green` | monochrome tint: `green`, `amber`, `cyan`, `white`, `red`, `matrix`, or `R,G,B` |
+| `--tint` | `green` | monochrome tint: `green`, `amber`, `cyan`, `white`, `red`, `matrix`, `blue`, `purple`, `pink`, `orange`, `lime`, `ice`, or any `R,G,B` |
 | `--flip` | off | mirror the sprite horizontally |
 | `--both-ways` | off | also write `<name>_flipped` frames into the JSON |
 | `--play [N]` | off | play the result in the terminal for `N` loops (default 3) |

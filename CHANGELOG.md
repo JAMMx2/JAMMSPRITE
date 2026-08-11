@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ## [1.2.0] — 2026-08-11
 
 ### Added
+- **JAMMSPRITE Web** (`index.html`) — the whole pipeline as one offline browser
+  app, zero install: drop a **photo, animated GIF, or short video** and get a
+  sprite. Auto cutout (transparency or flat-background lift) with a
+  keep-background mode, **full-color output** or any tint, all glyph styles,
+  gamma/invert/flip/breathe, and exports: animated **GIF**, **sprite sheet
+  PNG**, single-frame PNG, **`frames.json`** (works with `tools/player.html`
+  and game engines), or copy-as-text. Pure JS — includes its own GIF decoder
+  and encoder; nothing ever leaves your device.
+- **Six new tint presets** in both the CLI and the web app — `blue`, `purple`,
+  `pink`, `orange`, `lime`, `ice` — joining `green`, `amber`, `cyan`, `white`,
+  `red`, `matrix`. (`--tint` still takes any literal `R,G,B` too.)
 - **`--charset NAME`** — pick a named glyph style instead of hand-typing a ramp:
   `classic` (the original), `detail` (70-step photographic ramp for big grids),
   `blocks` (Unicode shading blocks), `minimal`, `retro`, `dots`, `hatch`,
