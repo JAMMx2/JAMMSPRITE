@@ -133,3 +133,82 @@ def test_cli_rejects_bad_tint(tmp_path, capsys):
     with pytest.raises(SystemExit) as exc:
         main([str(img), "--tint", "not-a-color"])
     assert exc.value.code != 0
+
+
+# --------------------------------------------------------------- charsets ---
+def test_parse_charset_named_preset():
+    assert core.parse_charset("blocks") == core.CHARSETS["blocks"]
+    assert core.parse_charset("BLOCKS") == core.CHARSETS["blocks"]  # case-insensitive
+
+
+def test_parse_charset_literal_passthrough():
+    # a string that isn't a preset name is used verbatim as the ramp
+    assert core.parse_charset(" .oO@") == " .oO@"
+
+
+@pytest.mark.parametrize("bad", ["", " ", "x"])
+def test_parse_charset_rejects_too_short(bad):
+    with pytest.raises(ValueError):
+        core.parse_charset(bad)
+
+
+def test_every_preset_is_usable():
+    # each preset must have a reserved slot + at least one real glyph
+    for name, ramp in core.CHARSETS.items():
+        assert len(ramp) >= 2, name
+        assert ramp[0] == " ", f"{name} should start with the reserved empty slot"
+
+
+# ----------------------------------------------------------- invert_ramp ---
+def test_invert_ramp_reverses_body_keeps_slot0():
+    assert core.invert_ramp(" .:-=") == " =-:."   # slot 0 stays, rest flips
+
+
+def test_invert_ramp_twice_is_identity():
+    for ramp in (core.CHARSETS["classic"], " .oO@", " ░▒▓█"):
+        assert core.invert_ramp(core.invert_ramp(ramp)) == ramp
+
+
+def test_invert_ramp_short_is_noop():
+    assert core.invert_ramp("x") == "x"
+
+
+# ---------------------------------------------------------------- gamma ----
+def test_config_gamma_default_is_one():
+    assert core.Config().gamma == 1.0
+
+
+def test_config_accepts_gamma():
+    assert core.Config(gamma=2.2).gamma == 2.2
+
+
+# ------------------------------------------------------- cli new flags -----
+def test_cli_list_charsets_exits_clean(capsys):
+    from jammsprite.cli import main
+    with pytest.raises(SystemExit) as exc:
+        main(["--list-charsets"])          # no input arg required
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "blocks" in out and "classic" in out
+
+
+def test_cli_charset_and_ramp_and_gamma_reach_config(monkeypatch):
+    # verify the CLI plumbs --charset / --invert / --gamma into the Config
+    import jammsprite.cli as cli
+    seen = {}
+
+    def fake_frames_from_still(path, breathe):
+        from PIL import Image
+        return [Image.new("RGB", (8, 8))]
+
+    def fake_frame_to_ascii(im, cfg):
+        seen["ramp"] = cfg.ramp
+        seen["gamma"] = cfg.gamma
+        return None  # -> "no subject found", exits before writing outputs
+
+    monkeypatch.setattr(cli.core, "frames_from_still", fake_frames_from_still)
+    monkeypatch.setattr(cli.core, "frame_to_ascii", fake_frame_to_ascii)
+    with pytest.raises(SystemExit):
+        cli.main(["pic.png", "--charset", "blocks", "--invert", "--gamma", "1.8"])
+    assert seen["ramp"] == core.invert_ramp(core.CHARSETS["blocks"])
+    assert seen["gamma"] == 1.8

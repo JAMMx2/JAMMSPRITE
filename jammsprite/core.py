@@ -46,6 +46,54 @@ TINTS = {
     "matrix": (0, 255, 70),
 }
 
+#: Named glyph-ramp presets (dark -> bright). The FIRST character is a reserved
+#: "empty" slot and is never drawn on the subject — the darkest *filled* glyph
+#: is the second character. Pick with ``--charset NAME`` (or pass your own
+#: ``--ramp`` string). Longer ramps = finer tonal detail; blocky ramps read
+#: better at small sizes.
+CHARSETS = {
+    # the historic default — smooth 17-step, reads well in colour
+    "classic": " .:-=+ox*scaeX#%@&",
+    # ultra-fine 70-step photographic ramp (Paul Bourke), great for big grids
+    "detail": (" .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvcz"
+               "XYUJCLQ0OZmwqpdbkhao*#MW&8%B@$"),
+    # Unicode shading blocks — clean, poster-like fills
+    "blocks": " ░▒▓█",
+    # chunky 6-step, bold at tiny sizes
+    "minimal": " .:oO@",
+    # retro terminal 10-step
+    "retro": " .:-=+*#%@",
+    # dot / stipple density
+    "dots": " .·•●█",
+    # cross-hatch, inky feel
+    "hatch": " .-+=xX#▓",
+    # pure 0/1 — data-moshy look
+    "binary": " 01",
+    # thin vertical bars, VU-meter vibe
+    "bars": " ▁▂▃▄▅▆▇█",
+}
+
+
+def parse_charset(value: str) -> str:
+    """'blocks' -> the preset ramp string; otherwise treat ``value`` as a
+    literal ramp. Raises ValueError only if the resolved ramp is too short."""
+    v = value.strip()
+    ramp = CHARSETS.get(v.lower(), value)
+    if len(ramp) < 2:
+        raise ValueError(
+            f"ramp/charset needs at least 2 characters — got {value!r}. "
+            f"Named presets: {sorted(CHARSETS)}"
+        )
+    return ramp
+
+
+def invert_ramp(ramp: str) -> str:
+    """Flip a ramp dark<->bright while preserving the reserved first slot,
+    so subjects render light-on-dark instead of dark-on-light (or vice versa)."""
+    if len(ramp) < 2:
+        return ramp
+    return ramp[:1] + ramp[1:][::-1]
+
 
 # ------------------------------------------------------------------ config ---
 @dataclass
@@ -54,6 +102,7 @@ class Config:
     rows: int = 84           # glyph grid height
     char_aspect: float = 0.5 # monospace cell width / height
     ramp: str = " .:-=+ox*scaeX#%@&"        # dark -> bright
+    gamma: float = 1.0       # tone curve: >1 brightens midtones (denser), <1 deepens
     pad_x: int = 9           # in-grid margin so tail/paws never clip
     pad_top: int = 5
     pad_bot: int = 4
@@ -188,11 +237,16 @@ def frame_to_ascii(img: Image.Image, cfg: Config):
     chars = [[" "] * cfg.cols for _ in range(cfg.rows)]
     colors = [[None] * cfg.cols for _ in range(cfg.rows)]
     ramp = cfg.ramp
+    span = len(ramp) - 2
+    inv_g = 1.0 / cfg.gamma if cfg.gamma and cfg.gamma > 0 else 1.0
     for yy in range(dh):
         for xx in range(dw):
             if M[yy, xx] < 128:
                 continue
-            idx = 1 + int(round((L[yy, xx] / 255.0) * (len(ramp) - 2)))  # 1.. -> never blank
+            t = L[yy, xx] / 255.0
+            if inv_g != 1.0:
+                t = t ** inv_g                       # tone curve for detail control
+            idx = 1 + int(round(t * span))           # 1.. -> never blank
             gy, gx = oy + yy, ox + xx
             if 0 <= gy < cfg.rows and 0 <= gx < cfg.cols:
                 chars[gy][gx] = ramp[idx]

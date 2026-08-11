@@ -1,16 +1,19 @@
 """JAMMSPRITE — turn real video or photos into clean, animated ASCII sprites."""
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 
 __all__ = [
     "__version__",
     "Config",
     "TINTS",
+    "CHARSETS",
     "clean_mask",
     "despeckle",
     "flip_frame",
     "frame_to_ascii",
     "frame_text",
+    "invert_ramp",
+    "parse_charset",
     "parse_tint",
     "render_gif",
     "render_sheet",

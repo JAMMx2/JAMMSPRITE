@@ -5,7 +5,7 @@
 [![CI](https://github.com/JAMMx2/JAMMSPRITE/actions/workflows/ci.yml/badge.svg)](https://github.com/JAMMx2/JAMMSPRITE/actions/workflows/ci.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-2ea44f)](https://github.com/JAMMx2/JAMMSPRITE/blob/main/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
-[![Changelog](https://img.shields.io/badge/changelog-v1.1.1-2ea44f)](CHANGELOG.md)
+[![Changelog](https://img.shields.io/badge/changelog-v1.2.0-2ea44f)](CHANGELOG.md)
 
 Feed it a short clip of a cat walking (or anything), and it gives you back a
 game-ready sprite made entirely of text glyphs — plus an animated preview and a
@@ -86,6 +86,18 @@ jammsprite walk.mp4 --name walk --tint amber --flip --both-ways
 
 # convert, then play it right in your terminal
 jammsprite cat.png --name idle --breathe 8 --play
+
+# pick a glyph style — solid Unicode blocks instead of punctuation
+jammsprite cat.png --name idle --charset blocks
+
+# push more detail into the shadows with the tone curve, on a fine ramp
+jammsprite walk.mp4 --name walk --charset detail --gamma 1.6
+
+# light-on-dark look (flip the ramp bright↔dark)
+jammsprite cat.png --name idle --invert
+
+# see every built-in glyph style
+jammsprite --list-charsets
 ```
 
 (`python -m jammsprite …` works too.)
@@ -104,7 +116,11 @@ Each run writes to `./out/` (override with `--out`):
 |------|---------|---------|
 | `--name` | from filename | animation name (used for output filenames + JSON key) |
 | `--cols` / `--rows` | `150` / `84` | glyph grid (detail vs. size/CPU) |
-| `--ramp` | `" .:-=+ox*scaeX#%@&"` | characters, dark → bright |
+| `--ramp` | `" .:-=+ox*scaeX#%@&"` | characters, dark → bright (overrides `--charset`) |
+| `--charset` | `classic` | named glyph style: `classic`, `detail`, `blocks`, `minimal`, `retro`, `dots`, `hatch`, `binary`, `bars` (or a literal ramp) |
+| `--list-charsets` | — | preview every built-in glyph style and exit |
+| `--gamma` | `1.0` | tone/detail curve: `>1` brightens midtones (denser), `<1` deepens shadows |
+| `--invert` | off | flip the ramp dark↔bright (light-on-dark subjects) |
 | `--start` / `--dur` | `0` / whole clip | video: time window to sample (seconds) |
 | `--fps` | `6` | video: sampling rate |
 | `--frames` | `16` | max frames to keep |
