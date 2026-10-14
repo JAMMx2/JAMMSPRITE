@@ -49,6 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="tone/detail curve: >1 brightens midtones (denser), <1 deepens shadows (default 1.0)")
     ap.add_argument("--invert", action="store_true",
                     help="flip the ramp dark<->bright (light-on-dark subjects)")
+    ap.add_argument("--dither", choices=core.DITHERS, default="none",
+                    help="brightness->glyph dithering: none (default), ordered (Bayer 4x4), floyd (Floyd-Steinberg)")
     ap.add_argument("--start", type=float, default=0.0, help="video: window start (s)")
     ap.add_argument("--dur", type=float, default=0.0, help="video: window length (s), 0 = whole clip")
     ap.add_argument("--fps", type=float, default=6.0, help="video: sampling rate")
@@ -60,21 +62,66 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--flip", action="store_true", help="mirror the sprite horizontally (face the other way)")
     ap.add_argument("--both-ways", action="store_true",
                     help="also write a pre-mirrored '<name>_flipped' animation into the JSON")
+    ap.add_argument("--dedupe", action="store_true",
+                    help="drop frames identical to the previous one (and a last frame equal to the first)")
+    ap.add_argument("--trim", type=int, nargs="?", const=0, default=None, metavar="PAD",
+                    help="crop all frames to the subject's shared bounding box (+PAD cells, default 0)")
     ap.add_argument("--no-gif", action="store_true")
     ap.add_argument("--no-sheet", action="store_true")
     ap.add_argument("--no-json", action="store_true")
-    ap.add_argument("--duration-ms", type=int, default=120, help="GIF frame duration")
+    ap.add_argument("--html", action="store_true", help="also write <name>.html — a self-contained animated page")
+    ap.add_argument("--svg", action="store_true", help="also write <name>.svg — scalable, animated when >1 frame")
+    ap.add_argument("--ansi", action="store_true",
+                    help="also write <name>.ans — 24-bit ANSI text for terminals (per-cell colour with --color)")
+    ap.add_argument("--duration-ms", type=int, default=120, help="GIF/HTML/SVG frame duration")
     ap.add_argument("--model", default="isnet-general-use", help="rembg model")
     ap.add_argument("--print", action="store_true", help="also print the first frame to stdout")
     ap.add_argument("--play", type=int, nargs="?", const=3, default=0, metavar="LOOPS",
-                    help="after converting, play the animation in the terminal (default 3 loops)")
+                    help="after converting, play the animation in the terminal (default 3 loops; "
+                         "truecolor with --color, else your --tint)")
     return ap
 
 
+def build_preview_parser() -> argparse.ArgumentParser:
+    ap = argparse.ArgumentParser(
+        prog="jammsprite preview",
+        description="Play an existing *.frames.json in the terminal (no conversion, no ML).",
+    )
+    ap.add_argument("json", help="a *.frames.json written by jammsprite or JAMMSPRITE Web")
+    ap.add_argument("--anim", default=None, help="animation name inside the file (default: first)")
+    ap.add_argument("--loops", type=int, default=3, help="how many times to loop (default 3; 0 = forever)")
+    ap.add_argument("--duration-ms", type=int, default=120, help="frame duration (default 120)")
+    ap.add_argument("--color", action="store_true", help="per-cell truecolor")
+    ap.add_argument("--tint", default="green", help=f"glyph colour when not --color: {sorted(core.TINTS)} or 'R,G,B'")
+    ap.add_argument("--flip", action="store_true", help="mirror horizontally")
+    ap.add_argument("--trim", type=int, nargs="?", const=0, default=None, metavar="PAD",
+                    help="crop to the subject's bounding box (+PAD cells) — fits small terminals")
+    return ap
+
+
+def preview_main(argv):
+    a = build_preview_parser().parse_args(argv)
+    try:
+        name, frames = core.read_json(a.json, a.anim)
+        fg = core.parse_tint(a.tint)
+    except (OSError, ValueError) as e:
+        sys.exit(str(e))
+    if a.flip:
+        frames = [core.flip_frame(f) for f in frames]
+    if a.trim is not None:
+        frames = core.trim_frames(frames, pad=a.trim)
+    print(f"[jammsprite] {name}: {len(frames)} frame(s) — Ctrl-C to stop")
+    core.play_in_terminal(frames, duration_ms=a.duration_ms, loops=a.loops, color=a.color, fg=fg)
+
+
 def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == "preview":
+        return preview_main(argv[1:])
     a = build_parser().parse_args(argv)
 
-    cfg = core.Config(cols=a.cols, rows=a.rows, model=a.model, gamma=a.gamma)
+    cfg = core.Config(cols=a.cols, rows=a.rows, model=a.model, gamma=a.gamma, dither=a.dither)
     # Glyph ramp: explicit --ramp wins, else a named/literal --charset, else default.
     if a.ramp:
         cfg.ramp = a.ramp
@@ -93,7 +140,7 @@ def main(argv=None):
 
     # pick a frame source
     if os.path.isdir(a.input):
-        srcs = core.frames_from_folder(a.input)
+        srcs = core.frames_from_folder(a.input, a.frames)
     elif a.input.lower().endswith(core.VID_EXT):
         srcs = core.frames_from_video(a.input, a.start, a.dur, a.fps, a.frames)
     elif a.input.lower().endswith(core.IMG_EXT):
@@ -114,6 +161,14 @@ def main(argv=None):
 
     if a.flip:
         frames = [core.flip_frame(f) for f in frames]
+    if a.dedupe:
+        before = len(frames)
+        frames = core.dedupe_frames(frames)
+        if len(frames) != before:
+            print(f"  dedupe: {before} -> {len(frames)} frames")
+    if a.trim is not None:
+        frames = core.trim_frames(frames, pad=a.trim)
+        print(f"  trim: {len(frames[0]['chars'][0])}x{len(frames[0]['chars'])} cells")
 
     os.makedirs(a.out, exist_ok=True)
     base = os.path.join(a.out, name)
@@ -126,11 +181,22 @@ def main(argv=None):
     if not a.no_sheet:
         core.render_sheet(frames, cfg, base + ".sheet.png", name.upper(), color=a.color)
         print(f"  wrote {base}.sheet.png")
+    if a.html:
+        with open(base + ".html", "w", encoding="utf-8") as fh:
+            fh.write(core.render_html(frames, name, cfg, color=a.color, duration=a.duration_ms))
+        print(f"  wrote {base}.html")
+    if a.svg:
+        with open(base + ".svg", "w", encoding="utf-8") as fh:
+            fh.write(core.render_svg(frames, cfg, color=a.color, duration=a.duration_ms))
+        print(f"  wrote {base}.svg")
+    if a.ansi:
+        core.write_ansi(frames, base + ".ans", color=a.color, fg=cfg.fg)
+        print(f"  wrote {base}.ans")
     if a.print:
         core.print_frame(frames[0])
     print(f"[jammsprite] done — {len(frames)} frames.")
     if a.play:
-        core.play_in_terminal(frames, duration_ms=a.duration_ms, loops=a.play)
+        core.play_in_terminal(frames, duration_ms=a.duration_ms, loops=a.play, color=a.color, fg=cfg.fg)
 
 
 if __name__ == "__main__":  # pragma: no cover

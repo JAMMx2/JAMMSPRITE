@@ -212,3 +212,259 @@ def test_cli_charset_and_ramp_and_gamma_reach_config(monkeypatch):
         cli.main(["pic.png", "--charset", "blocks", "--invert", "--gamma", "1.8"])
     assert seen["ramp"] == core.invert_ramp(core.CHARSETS["blocks"])
     assert seen["gamma"] == 1.8
+
+
+# ========================================================== v1.3.0 ==========
+# ------------------------------------------------------- quantize_levels ---
+def test_quantize_none_matches_plain_rounding():
+    t = np.array([[0.0, 0.24, 0.26, 0.5, 1.0]], dtype=np.float32)
+    m = np.ones_like(t, dtype=bool)
+    out = core.quantize_levels(t, m, levels=5, dither="none")   # span 4
+    assert out.tolist() == [[0, 1, 1, 2, 4]]
+
+
+def test_quantize_masks_out_cells():
+    t = np.ones((2, 2), dtype=np.float32)
+    m = np.array([[True, False], [False, True]])
+    out = core.quantize_levels(t, m, 3, "none")
+    assert out.tolist() == [[2, 0], [0, 2]]
+
+
+@pytest.mark.parametrize("mode", ["ordered", "floyd"])
+def test_quantize_dither_preserves_mean_brightness(mode):
+    # a flat mid-gray field must dither to roughly the same average level
+    t = np.full((16, 16), 0.37, dtype=np.float32)
+    m = np.ones_like(t, dtype=bool)
+    out = core.quantize_levels(t, m, levels=3, dither=mode)      # span 2 -> want mean ~0.74
+    assert out.min() >= 0 and out.max() <= 2
+    assert abs(out.mean() - 0.74) < 0.08
+    assert len(np.unique(out)) > 1                                # it actually dithered
+
+
+def test_quantize_ordered_is_deterministic():
+    t = np.random.default_rng(1).random((8, 8)).astype(np.float32)
+    m = np.ones_like(t, dtype=bool)
+    a = core.quantize_levels(t, m, 6, "ordered")
+    b = core.quantize_levels(t, m, 6, "ordered")
+    assert (a == b).all()
+
+
+def test_quantize_rejects_unknown_mode():
+    with pytest.raises(ValueError):
+        core.quantize_levels(np.zeros((1, 1)), np.ones((1, 1), bool), 3, "random")
+
+
+def test_config_dither_default_none():
+    assert core.Config().dither == "none"
+    assert "floyd" in core.DITHERS and "ordered" in core.DITHERS
+
+
+# --------------------------------------------------------- place_on_grid ---
+def test_place_on_grid_solid_fill_and_despeckle():
+    cfg = core.Config(cols=12, rows=8, ramp=" .oO@")
+    L = np.array([[0, 100, 255], [0, 100, 255]], dtype=np.uint8)
+    M = np.full((2, 3), 255, dtype=np.uint8)
+    C = np.zeros((2, 3, 3), dtype=np.uint8)
+    C[..., 0] = 200
+    fr = core.place_on_grid(L, M, C, ox=4, oy=3, cfg=cfg)
+    assert fr["chars"][3][4:7] == ".o@"       # darkest filled glyph is slot 1, never blank
+    assert fr["chars"][4][4:7] == ".o@"
+    assert fr["colors"][3][4] == "200,0,0"
+    assert fr["chars"][0] == " " * 12
+
+
+def test_place_on_grid_clips_to_grid():
+    cfg = core.Config(cols=4, rows=4, ramp=" .@")
+    L = np.full((3, 3), 255, dtype=np.uint8)
+    M = np.full((3, 3), 255, dtype=np.uint8)
+    C = np.zeros((3, 3, 3), dtype=np.uint8)
+    fr = core.place_on_grid(L, M, C, ox=2, oy=-1, cfg=cfg)        # hangs off top + right
+    assert len(fr["chars"]) == 4 and all(len(r) == 4 for r in fr["chars"])
+    assert fr["chars"][0] == "  @@" and fr["chars"][2] == "    "
+
+
+# --------------------------------------------------------- dedupe_frames ---
+def test_dedupe_drops_consecutive_and_loop_seam():
+    a, b, c = make_frame(["a "]), make_frame(["b "]), make_frame(["a "])
+    out = core.dedupe_frames([a, a, b, b, b, c])
+    assert [f["chars"] for f in out] == [["a "], ["b "]]       # trailing 'a' == first -> dropped
+
+
+def test_dedupe_keeps_single_and_empty():
+    assert core.dedupe_frames([]) == []
+    a = make_frame(["x"])
+    assert core.dedupe_frames([a, a, a]) == [a]
+
+
+# ----------------------------------------------------------- trim_frames ---
+def test_trim_frames_uses_shared_bbox():
+    f1 = make_frame(["      ", "  ab  ", "      ", "      "])
+    f2 = make_frame(["      ", "      ", "    cd", "      "])
+    out = core.trim_frames([f1, f2])
+    assert out[0]["chars"] == ["ab  ", "    "]
+    assert out[1]["chars"] == ["    ", "  cd"]
+    assert out[0]["colors"][0] == ["1,2,3", "1,2,3", None, None]
+    assert f1["chars"][1] == "  ab  "                             # input untouched
+
+
+def test_trim_frames_pad_is_clamped():
+    f = make_frame(["   ", " x ", "   "])
+    out = core.trim_frames([f], pad=5)
+    assert out[0]["chars"] == ["   ", " x ", "   "]
+
+
+def test_trim_frames_all_blank_is_noop():
+    f = make_frame(["  ", "  "])
+    assert core.trim_frames([f])[0]["chars"] == ["  ", "  "]
+
+
+# ------------------------------------------------------------ frame_ansi ---
+def test_frame_ansi_truecolor_runs_and_reset():
+    fr = {"chars": ["ab c  "], "colors": [["1,2,3", "1,2,3", None, "9,8,7", None, None]]}
+    s = core.frame_ansi(fr, color=True)
+    assert s == "\x1b[38;2;1;2;3mab\x1b[0m \x1b[38;2;9;8;7mc\x1b[0m"
+
+
+def test_frame_ansi_tint_and_plain():
+    fr = make_frame(["xy"])
+    assert core.frame_ansi(fr, color=False, fg=(255, 0, 0)) == "\x1b[38;2;255;0;0mxy\x1b[0m"
+    assert core.frame_ansi(fr, color=False, fg=None) == "xy"
+
+
+def test_write_ansi_separates_frames_with_formfeed(tmp_path):
+    p = tmp_path / "a.ans"
+    core.write_ansi([make_frame(["a"]), make_frame(["b"])], str(p), color=False, fg=None)
+    assert p.read_text(encoding="utf-8") == "a\n\fb\n"
+
+
+# ------------------------------------------------------------- html / svg --
+def test_render_svg_is_valid_xml_and_animated():
+    import xml.etree.ElementTree as ET
+    cfg = core.Config()
+    frames = [make_frame(["<a>", " b "]), make_frame([" c ", "d  "])]
+    svg = core.render_svg(frames, cfg, color=True, duration=100)
+    root = ET.fromstring(svg)
+    assert root.tag.endswith("svg")
+    assert "&lt;a&gt;" in svg                                     # escaped glyphs
+    assert svg.count("<animate") == 2 and 'dur="200ms"' in svg
+    assert 'fill="#010203"' in svg                                # per-cell colour kept
+
+
+def test_render_svg_single_frame_has_no_animation():
+    svg = core.render_svg([make_frame(["x"])], core.Config(), color=False)
+    assert "<animate" not in svg and 'fill="#7cffb2"' in svg
+
+
+def test_render_html_embeds_frames_and_escapes():
+    cfg = core.Config(fg=(1, 2, 3), bg=(0, 0, 0))
+    html = core.render_html([make_frame(["</script>"]), make_frame(["ok"])], "walk", cfg, color=False, duration=90)
+    assert "<!doctype html>" in html and "setInterval(show,90)" in html
+    assert "</script>\"" not in html.split("var frames=")[1].split(";")[0]   # payload can't close the tag
+    assert "&lt;/script&gt;" in html and "color:#010203" in html
+
+
+def test_render_html_color_mode_uses_spans():
+    html = core.render_html([make_frame(["ab"])], "x", core.Config(), color=True)
+    assert "color:#010203" in html and "<span" in html.replace("<\\/", "</")
+
+
+# ----------------------------------------------------------- read_json -----
+def test_read_json_picks_first_or_named(tmp_path):
+    p = tmp_path / "w.frames.json"
+    core.write_json([make_frame(["ab"])], "walk", str(p), flipped_too=True)
+    name, frames = core.read_json(str(p))
+    assert name == "walk" and frames[0]["chars"] == ["ab"]
+    name2, frames2 = core.read_json(str(p), "walk_flipped")
+    assert name2 == "walk_flipped" and frames2[0]["chars"] == ["ba"]
+    with pytest.raises(ValueError):
+        core.read_json(str(p), "nope")
+
+
+def test_read_json_rejects_junk(tmp_path):
+    p = tmp_path / "bad.json"
+    p.write_text('{"x": [1, 2]}')
+    with pytest.raises(ValueError):
+        core.read_json(str(p))
+
+
+# ------------------------------------------------------------ even_picks ---
+def test_even_picks():
+    assert core.even_picks(3, 0) == [0, 1, 2]
+    assert core.even_picks(3, 10) == [0, 1, 2]
+    assert core.even_picks(10, 4) == [0, 2, 5, 7]
+
+
+def test_frames_from_folder_honours_limit(tmp_path):
+    from PIL import Image
+    for i in range(6):
+        Image.new("RGB", (4, 4)).save(tmp_path / f"f{i}.png")
+    assert len(core.frames_from_folder(str(tmp_path), 3)) == 3
+    assert len(core.frames_from_folder(str(tmp_path))) == 6
+
+
+# ------------------------------------------------------------- cli 1.3 ----
+def test_cli_dither_reaches_config(monkeypatch):
+    import jammsprite.cli as cli
+    seen = {}
+
+    def fake_still(path, breathe):
+        from PIL import Image
+        return [Image.new("RGB", (8, 8))]
+
+    def fake_to_ascii(im, cfg):
+        seen["dither"] = cfg.dither
+        return None
+
+    monkeypatch.setattr(cli.core, "frames_from_still", fake_still)
+    monkeypatch.setattr(cli.core, "frame_to_ascii", fake_to_ascii)
+    with pytest.raises(SystemExit):
+        cli.main(["pic.png", "--dither", "floyd"])
+    assert seen["dither"] == "floyd"
+
+
+def test_cli_rejects_bad_dither():
+    from jammsprite.cli import main
+    with pytest.raises(SystemExit) as exc:
+        main(["pic.png", "--dither", "random"])
+    assert exc.value.code != 0
+
+
+def test_cli_writes_new_formats_and_dedupes(tmp_path, monkeypatch):
+    import jammsprite.cli as cli
+    fr = make_frame(["    ", " ab ", "    "])
+
+    def fake_still(path, breathe):
+        from PIL import Image
+        return [Image.new("RGB", (8, 8))] * 3
+
+    monkeypatch.setattr(cli.core, "frames_from_still", fake_still)
+    monkeypatch.setattr(cli.core, "frame_to_ascii", lambda im, cfg: dict(chars=list(fr["chars"]),
+                                                                           colors=[list(r) for r in fr["colors"]]))
+    cli.main(["pic.png", "--name", "t", "--out", str(tmp_path), "--no-gif", "--no-sheet",
+              "--html", "--svg", "--ansi", "--dedupe", "--trim"])
+    data = json.loads((tmp_path / "t.frames.json").read_text())
+    assert len(data["t"]) == 1                                    # 3 identical frames -> 1
+    assert data["t"][0]["chars"] == ["ab"]                        # trimmed
+    for ext in (".html", ".svg", ".ans"):
+        assert (tmp_path / ("t" + ext)).exists()
+
+
+def test_cli_preview_plays_json(tmp_path, monkeypatch):
+    import jammsprite.cli as cli
+    p = tmp_path / "w.frames.json"
+    core.write_json([make_frame(["ab"]), make_frame(["cd"])], "walk", str(p))
+    seen = {}
+
+    def fake_play(frames, duration_ms, loops, color, fg):
+        seen.update(n=len(frames), d=duration_ms, loops=loops, color=color, fg=fg, first=frames[0]["chars"])
+
+    monkeypatch.setattr(cli.core, "play_in_terminal", fake_play)
+    cli.main(["preview", str(p), "--loops", "2", "--duration-ms", "50", "--tint", "amber", "--flip"])
+    assert seen == dict(n=2, d=50, loops=2, color=False, fg=core.TINTS["amber"], first=["ba"])
+
+
+def test_cli_preview_missing_file_exits_nonzero():
+    from jammsprite.cli import main
+    with pytest.raises(SystemExit) as exc:
+        main(["preview", "/nonexistent/x.frames.json"])
+    assert exc.value.code != 0
