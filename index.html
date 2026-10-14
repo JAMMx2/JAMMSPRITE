@@ -119,6 +119,9 @@ footer{padding:6px 16px; border-top:1px solid var(--edge); color:var(--fg-faint)
     <h3>Glyphs</h3>
     <div class="row"><span class="lab">Style</span><select id="charset"></select></div>
     <div class="row"><span class="lab">Gamma</span><input type="range" id="gamma" min="40" max="250" value="100"><span class="num" id="gammaN">1.0</span></div>
+    <div class="row"><span class="lab">Dither</span><select id="dither">
+      <option value="none">none</option><option value="ordered">ordered (Bayer 4x4)</option><option value="floyd">floyd (error diffusion)</option>
+    </select></div>
     <div class="row"><span class="lab"></span><button class="mini" id="invert">Invert ramp</button></div>
 
     <h3>Color</h3>
@@ -141,10 +144,11 @@ footer{padding:6px 16px; border-top:1px solid var(--edge); color:var(--fg-faint)
     <div class="row"><span class="lab">Video fps</span><input type="range" id="fps" min="2" max="15" value="6"><span class="num" id="fpsN">6</span></div>
     <div class="row"><span class="lab">Speed</span><input type="range" id="delay" min="40" max="400" step="10" value="120"><span class="num" id="delayN">120ms</span></div>
     <div class="row"><span class="lab"></span><button class="mini" id="flip">Flip ◄►</button><button class="mini" id="breathe">Breathe (stills)</button></div>
+    <div class="row"><span class="lab"></span><button class="mini" id="dedupe" title="drop frames identical to the previous one">Dedupe frames</button><button class="mini" id="trim" title="crop every frame to the subject's shared bounding box">Trim to subject</button></div>
 
     <h3>Apply</h3>
     <div class="row"><button class="primary" id="rerun" style="flex:1" disabled>Re-convert with these settings</button></div>
-    <div class="hint">Color, speed and background apply instantly. Grid, glyphs, cutout and frames need a re-convert.</div>
+    <div class="hint">Color, speed, background, flip, dedupe and trim apply instantly. Grid, glyphs, dither, cutout and frames need a re-convert.</div>
   </div>
 
   <div id="stagewrap">
@@ -173,7 +177,10 @@ footer{padding:6px 16px; border-top:1px solid var(--edge); color:var(--fg-faint)
         <button id="dlSheet">Sprite sheet PNG</button>
         <button id="dlPng">This frame PNG</button>
         <button id="dlJson">frames.json</button>
+        <button id="dlHtml" title="self-contained animated page">HTML</button>
+        <button id="dlSvg" title="scalable, animated when more than one frame">SVG</button>
         <button id="copyTxt">Copy as text</button>
+        <button id="copyAnsi" title="24-bit ANSI for your terminal">Copy ANSI</button>
       </div>
     </div>
     <div id="status">Ready. Drop a file to begin — or press <b>Try a demo sprite</b>.</div>
@@ -182,7 +189,7 @@ footer{padding:6px 16px; border-top:1px solid var(--edge); color:var(--fg-faint)
 <footer>
   <span>JAMMSPRITE Web · MIT · <a href="https://github.com/JAMMx2/JAMMSPRITE" target="_blank" rel="noopener">github.com/JAMMx2/JAMMSPRITE</a></span>
   <span>Command-line power version: <code>pip install git+https://github.com/JAMMx2/JAMMSPRITE.git</code></span>
-  <span>frames.json works with tools/player.html and your game engine.</span>
+  <span>frames.json works with tools/player.html, <code>jammsprite preview</code>, and your game engine.</span>
 </footer>
 <input type="file" id="file" accept="image/*,video/*,.gif,.mp4,.webm,.mov">
 <script>
@@ -504,12 +511,16 @@ function frameToAscii(srcCanvas, cfg){
   }
   var ramp=cfg.ramp, span=ramp.length-2;
   var invG=(cfg.gamma&&cfg.gamma>0)?1/cfg.gamma:1;
+  var tt=new Float32Array(dw*dh), inside=new Uint8Array(dw*dh);
+  for(var q=0;q<dw*dh;q++){
+    var qi=q*4; inside[q]=Md[qi]>=128?1:0;
+    var tv=Ld[qi]/255; if(invG!==1) tv=Math.pow(tv,invG); tt[q]=tv;
+  }
+  var levels=quantizeLevels(tt,inside,dw,dh,span+1,cfg.dither||"none");
   for(var dy=0;dy<dh;dy++) for(var dx=0;dx<dw;dx++){
     var di=(dy*dw+dx)*4;
-    if(Md[di]<128) continue;
-    var t=Ld[di]/255;
-    if(invG!==1) t=Math.pow(t,invG);
-    var idx=1+Math.round(t*span);                 // 1.. → never blank (SOLID FILL)
+    if(!inside[dy*dw+dx]) continue;
+    var idx=1+levels[dy*dw+dx];                   // 1.. → never blank (SOLID FILL)
     var ggy=oy+dy, ggx=ox+dx;
     if(ggy>=0&&ggy<cfg.rows&&ggx>=0&&ggx<cfg.cols){
       chars[ggy][ggx]=ramp[idx];
@@ -521,6 +532,53 @@ function frameToAscii(srcCanvas, cfg){
     for(var fy=0;fy<cfg.rows;fy++){ chars[fy].reverse(); colors[fy].reverse(); }
   }
   return {chars:chars.map(function(r){return r.join("");}), colors:colors};
+}
+/* port of quantize_levels: brightness t (0..1) → integer level 0..levels-1,
+   with optional ordered (Bayer 4x4) or Floyd-Steinberg dithering */
+var BAYER4=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
+function quantizeLevels(t,inside,w,h,levels,mode){
+  var span=Math.max(1,levels-1), out=new Int32Array(w*h), i;
+  if(mode==="ordered"){
+    for(var y=0;y<h;y++) for(var x=0;x<w;x++){ i=y*w+x; if(!inside[i]) continue;
+      var thr=(BAYER4[(y&3)*4+(x&3)]+0.5)/16;
+      out[i]=clamp(Math.floor(t[i]*span+(thr-0.5)+0.5),0,span); }
+  } else if(mode==="floyd"){
+    var work=new Float32Array(w*h);
+    for(i=0;i<w*h;i++) work[i]=t[i]*span;
+    for(var fy=0;fy<h;fy++) for(var fx=0;fx<w;fx++){ i=fy*w+fx; if(!inside[i]) continue;
+      var old=work[i], q=clamp(Math.round(old),0,span); out[i]=q;
+      var err=old-q; if(!err) continue;
+      if(fx+1<w) work[i+1]+=err*0.4375;
+      if(fy+1<h){ if(fx>0) work[i+w-1]+=err*0.1875; work[i+w]+=err*0.3125; if(fx+1<w) work[i+w+1]+=err*0.0625; }
+    }
+  } else {
+    for(i=0;i<w*h;i++){ if(!inside[i]) continue; out[i]=clamp(Math.floor(t[i]*span+0.5),0,span); }
+  }
+  return out;
+}
+/* port of dedupe_frames: drop frames identical to the previous (and a last == first) */
+function sameFrame(a,b){ return a.chars.join("\n")===b.chars.join("\n") && JSON.stringify(a.colors)===JSON.stringify(b.colors); }
+function dedupeFrames(frames){
+  var out=[];
+  for(var i=0;i<frames.length;i++){ if(out.length&&sameFrame(frames[i],out[out.length-1])) continue; out.push(frames[i]); }
+  if(out.length>1&&sameFrame(out[out.length-1],out[0])) out.pop();
+  return out;
+}
+/* port of trim_frames: crop every frame to the union bbox (+pad), shared so nothing jitters */
+function trimFrames(frames,pad){
+  if(!frames.length) return [];
+  pad=pad||0;
+  var rows=frames[0].chars.length, cols=frames[0].chars[0].length;
+  var y0=rows,y1=-1,x0=cols,x1=-1;
+  frames.forEach(function(fr){ fr.chars.forEach(function(row,y){
+    var s=row.replace(/\s+$/,""); if(!s.trim()) return;
+    var lead=s.length-s.replace(/^\s+/,"").length;
+    if(y<y0)y0=y; if(y>y1)y1=y; if(lead<x0)x0=lead; if(s.length-1>x1)x1=s.length-1; }); });
+  if(y1<0) return frames.map(function(f){ return {chars:f.chars.slice(), colors:f.colors.map(function(r){return r.slice();})}; });
+  y0=Math.max(0,y0-pad); y1=Math.min(rows-1,y1+pad); x0=Math.max(0,x0-pad); x1=Math.min(cols-1,x1+pad);
+  return frames.map(function(f){ return {
+    chars:f.chars.slice(y0,y1+1).map(function(r){return r.slice(x0,x1+1);}),
+    colors:f.colors.slice(y0,y1+1).map(function(r){return r.slice(x0,x1+1);}) }; });
 }
 function despeckle(chars,colors){
   var rows=chars.length, cols=chars[0].length;
@@ -768,12 +826,13 @@ function seekVideo(v,t){
 /* ================= APP STATE + UI ================= */
 var S={
   file:null, demo:false, name:"sprite",
-  src:[], ascii:[], rendered:[],
+  src:[], raw:[], ascii:[], rendered:[],
   playing:true, fi:0, zoom:1, lastTick:0,
   cfg:{
     cols:150, rows:84, charsetName:"classic", ramp:CHARSETS.classic, invert:false,
-    gamma:1.0, mode:"color", tint:"#7cffb2", bg:"#070b09",
-    cut:{mode:"auto", tol:42}, maxFrames:16, fps:6, delay:120, flip:false, breathe:false
+    gamma:1.0, dither:"none", mode:"color", tint:"#7cffb2", bg:"#070b09",
+    cut:{mode:"auto", tol:42}, maxFrames:16, fps:6, delay:120, flip:false, breathe:false,
+    dedupe:false, trim:false
   },
   dirty:false, busy:false
 };
@@ -782,6 +841,14 @@ function pbar(f){ var p=$("#pbar"); if(f==null){ p.style.display="none"; return;
   p.style.display="block"; p.firstElementChild.style.width=Math.round(f*100)+"%"; }
 function markDirty(){ S.dirty=true; var b=$("#rerun"); b.disabled=!(S.file||S.demo); }
 
+/* post-process (instant): raw converted frames → dedupe / trim → S.ascii */
+function applyPost(){
+  var fr=S.raw;
+  if(S.cfg.dedupe) fr=dedupeFrames(fr);
+  if(S.cfg.trim) fr=trimFrames(fr,1);
+  S.ascii=fr; if(S.fi>=fr.length) S.fi=0;
+  rerender();
+}
 /* re-render (cheap: color/bg/delay changes) */
 function rerender(){
   S.rendered=S.ascii.map(function(fr){ return renderFrame(fr,S.cfg); });
@@ -823,7 +890,7 @@ async function convert(){
     else{ got=await framesFromFile(S.file,{maxFrames:S.cfg.maxFrames,fps:S.cfg.fps,breathe:S.cfg.breathe},pbar); }
     S.name=got.name; S.src=got.frames;
     if(got.srcDelay&&!S.demo){ /* keep user's speed slider as-is; srcDelay informs default only */ }
-    var cfg={cols:S.cfg.cols, rows:S.cfg.rows, ramp:effRamp(), gamma:S.cfg.gamma, cut:S.cfg.cut, flip:S.cfg.flip};
+    var cfg={cols:S.cfg.cols, rows:S.cfg.rows, ramp:effRamp(), gamma:S.cfg.gamma, dither:S.cfg.dither, cut:S.cfg.cut, flip:S.cfg.flip};
     var frames=[], nulls=0;
     for(var i=0;i<S.src.length;i++){
       status("Converting frame "+(i+1)+"/"+S.src.length+"…");
@@ -841,13 +908,14 @@ async function convert(){
       }
     }
     if(!frames.length) throw new Error("couldn't convert that file");
-    S.ascii=frames; S.fi=0;
-    rerender();
+    S.raw=frames; S.fi=0;
+    applyPost();
     $("#drop").style.display="none"; $("#stage").style.display="flex";
     var extra=nulls?(" ("+nulls+" empty frame"+(nulls>1?"s":"")+" skipped)"):"";
-    status("<b>"+esc(S.name)+"</b> — "+frames.length+" frame"+(frames.length>1?"s":"")+" at "+S.cfg.cols+"×"+S.cfg.rows+extra+". Downloads are ready below.");
+    var W=S.ascii[0].chars[0].length, H=S.ascii[0].chars.length;
+    status("<b>"+esc(S.name)+"</b> — "+S.ascii.length+" frame"+(S.ascii.length>1?"s":"")+" at "+W+"×"+H+extra+". Downloads are ready below.");
   }catch(e){
-    status("✖ "+esc(e.message||String(e))+" — try another file, or the “Keep background” mode.",true);
+    status("Error: "+esc(e.message||String(e))+" — try another file, or the “Keep background” mode.",true);
   }
   pbar(null); S.busy=false; markDirty(); $("#rerun").disabled=true; S.dirty=false;
 }
@@ -917,6 +985,96 @@ function exportJson(){
   status("Saved <b>"+esc(S.name)+".frames.json</b> — drop it on tools/player.html or feed it to your engine.");
 }
 function frameText(fr){ return fr.chars.map(function(r){return r.replace(/\s+$/,"");}).join("\n"); }
+/* colour runs for one row: [{rgb:"r,g,b"|null, text}], trailing blanks dropped */
+function runs(row,colors,color,fg){
+  row=row.replace(/\s+$/,"");
+  var out=[], cur=null, buf="", c;
+  for(var x=0;x<row.length;x++){
+    var ch=row[x];
+    c=(ch===" ")?null:((color&&colors&&colors[x])?colors[x]:fg);
+    if(c!==cur&&buf){ out.push({rgb:cur,text:buf}); buf=""; }
+    cur=c; buf+=ch;
+  }
+  if(buf) out.push({rgb:cur,text:buf});
+  return out;
+}
+function rgbStrToHex(s){ return rgbToHex(s.split(",").map(Number)); }
+function xmlEsc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+/* port of frame_ansi: 24-bit ANSI text for terminals */
+function frameAnsi(fr,color,fgRgb){
+  var fg=fgRgb?fgRgb.join(","):null;
+  return fr.chars.map(function(row,y){
+    var line="", open=false;
+    runs(row,fr.colors[y],color,fg).forEach(function(r){
+      if(r.rgb===null){ if(open){ line+="\x1b[0m"; open=false; } line+=r.text; }
+      else { line+="\x1b[38;2;"+r.rgb.replace(/,/g,";")+"m"+r.text; open=true; }
+    });
+    return line+(open?"\x1b[0m":"");
+  }).join("\n");
+}
+/* port of render_svg: standalone SVG, SMIL-animated when >1 frame */
+function renderSvg(frames,color,fgHex,bgHex,delayMs){
+  var cw=7, ch=13, W=frames[0].chars[0].length, H=frames[0].chars.length, n=frames.length;
+  var total=Math.max(1,delayMs)*n, out=[];
+  out.push('<svg xmlns="http://www.w3.org/2000/svg" width="'+(W*cw)+'" height="'+(H*ch)+'" viewBox="0 0 '+(W*cw)+' '+(H*ch)+'" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="'+(ch-1)+'px">');
+  out.push('<rect width="100%" height="100%" fill="'+bgHex+'"/>');
+  frames.forEach(function(fr,k){
+    var vis=[], keys=[];
+    for(var i=0;i<n;i++){ vis.push(i===k?"1":"0"); keys.push((i/n).toFixed(4)); }
+    out.push('<g fill="'+fgHex+'"'+(n>1?' opacity="0"':'')+'>');
+    if(n>1) out.push('<animate attributeName="opacity" values="'+vis.join(";")+'" keyTimes="'+keys.join(";")+'" calcMode="discrete" dur="'+total+'ms" repeatCount="indefinite"/>');
+    fr.chars.forEach(function(row,y){
+      if(!row.trim()) return;
+      var cells=runs(row,fr.colors[y],color,null).map(function(r){
+        var t=xmlEsc(r.text);
+        return (r.rgb===null||!color)?t:'<tspan fill="'+rgbStrToHex(r.rgb)+'">'+t+'</tspan>';
+      }).join("");
+      var len=row.replace(/\s+$/,"").length;
+      out.push('<text xml:space="preserve" x="0" y="'+(y*ch+ch-3)+'" textLength="'+(len*cw)+'" lengthAdjust="spacingAndGlyphs">'+cells+'</text>');
+    });
+    out.push('</g>');
+  });
+  out.push('</svg>');
+  return out.join("\n");
+}
+/* port of render_html: one self-contained animated page */
+function renderHtml(frames,name,color,fgHex,bgHex,delayMs){
+  var payload=frames.map(function(fr){
+    return fr.chars.map(function(row,y){
+      if(!color) return xmlEsc(row.replace(/\s+$/,""));
+      return runs(row,fr.colors[y],true,null).map(function(r){
+        return r.rgb===null?xmlEsc(r.text):'<span style="color:'+rgbStrToHex(r.rgb)+'">'+xmlEsc(r.text)+'</span>';
+      }).join("");
+    }).join("\n");
+  });
+  var data=JSON.stringify(payload).replace(/<\//g,"<\\/"), safe=xmlEsc(name);
+  return '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>'+safe+' - JAMMSPRITE</title>\n'+
+    '<style>\nbody{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:'+bgHex+'}\n'+
+    '.jammsprite{margin:0;font:12px/13px ui-monospace,Menlo,Consolas,monospace;color:'+fgHex+';white-space:pre;background:'+bgHex+'}\n</style></head><body>\n'+
+    '<div class="jammsprite-embed" data-name="'+safe+'">\n<pre class="jammsprite" id="jammsprite-'+safe+'"></pre>\n<script>\n(function(){\n'+
+    '  var frames='+data+', i=0, el=document.getElementById("jammsprite-'+safe+'");\n'+
+    '  function show(){ el.innerHTML=frames[i]; i=(i+1)%frames.length; }\n'+
+    '  show(); if(frames.length>1) setInterval(show,'+Math.round(delayMs)+');\n})();\n<\/script>\n</div>\n</body></html>\n';
+}
+function exportHtml(){
+  if(!S.ascii.length) return;
+  var html=renderHtml(S.ascii,S.name,S.cfg.mode==="color",S.cfg.tint,S.cfg.bg,S.cfg.delay);
+  dl(new Blob([html],{type:"text/html"}), S.name+".html");
+  status("Saved <b>"+esc(S.name)+".html</b> — a self-contained animated page; open it anywhere.");
+}
+function exportSvg(){
+  if(!S.ascii.length) return;
+  var svg=renderSvg(S.ascii,S.cfg.mode==="color",S.cfg.tint,S.cfg.bg,S.cfg.delay);
+  dl(new Blob([svg],{type:"image/svg+xml"}), S.name+".svg");
+  status("Saved <b>"+esc(S.name)+".svg</b> — scales to any size"+(S.ascii.length>1?", animated":"")+".");
+}
+function copyAnsi(){
+  if(!S.ascii.length) return;
+  var t=frameAnsi(S.ascii[S.fi],S.cfg.mode==="color",hexToRgb(S.cfg.tint));
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(
+    function(){ status("Frame copied as 24-bit ANSI — paste it into a truecolor terminal."); },
+    function(){ status("Clipboard blocked — use frames.json with the CLI's `jammsprite preview` instead.",true); });
+}
 function copyText(){
   if(!S.ascii.length) return;
   var t=frameText(S.ascii[S.fi]);
@@ -927,12 +1085,12 @@ function copyText(){
 function flipNow(){
   S.cfg.flip=!S.cfg.flip;
   $("#flip").classList.toggle("on",S.cfg.flip);
-  if(!S.ascii.length) return;
-  S.ascii=S.ascii.map(function(fr){
+  if(!S.raw.length) return;
+  S.raw=S.raw.map(function(fr){
     return {chars:fr.chars.map(function(r){return r.split("").reverse().join("");}),
             colors:fr.colors.map(function(r){return r.slice().reverse();})};
   });
-  rerender();
+  applyPost();
 }
 
 /* ================= WIRING ================= */
@@ -954,6 +1112,7 @@ function init(){
   });
   cs.value="classic";
   cs.onchange=function(){ S.cfg.charsetName=this.value; markDirty(); };
+  $("#dither").onchange=function(){ S.cfg.dither=this.value; markDirty(); };
   // tints
   var tw=$("#tints");
   Object.keys(TINTS).forEach(function(k){
@@ -993,6 +1152,8 @@ function init(){
   $("#invert").onclick=function(){ S.cfg.invert=!S.cfg.invert; this.classList.toggle("on",S.cfg.invert); markDirty(); };
   $("#breathe").onclick=function(){ S.cfg.breathe=!S.cfg.breathe; this.classList.toggle("on",S.cfg.breathe); markDirty(); };
   $("#flip").onclick=flipNow;
+  $("#dedupe").onclick=function(){ S.cfg.dedupe=!S.cfg.dedupe; this.classList.toggle("on",S.cfg.dedupe); if(S.raw.length) applyPost(); };
+  $("#trim").onclick=function(){ S.cfg.trim=!S.cfg.trim; this.classList.toggle("on",S.cfg.trim); if(S.raw.length) applyPost(); };
   $("#rerun").onclick=convert;
   // file handling
   var drop=$("#drop");
@@ -1020,6 +1181,7 @@ function init(){
   // exports
   $("#dlGif").onclick=exportGif; $("#dlSheet").onclick=exportSheet;
   $("#dlPng").onclick=exportPng; $("#dlJson").onclick=exportJson; $("#copyTxt").onclick=copyText;
+  $("#dlHtml").onclick=exportHtml; $("#dlSvg").onclick=exportSvg; $("#copyAnsi").onclick=copyAnsi;
   requestAnimationFrame(tick);
 }
 init();
@@ -1028,7 +1190,9 @@ init();
 window.JAMM={S:S, CHARSETS:CHARSETS, TINTS:TINTS,
   decodeGif:decodeGif, encodeGif:encodeGif, frameToAscii:frameToAscii,
   computeMask:computeMask, cleanMask:cleanMask, renderFrame:renderFrame,
-  framesFromFile:framesFromFile, convert:convert, frameText:frameText, invertRamp:invertRamp};
+  framesFromFile:framesFromFile, convert:convert, frameText:frameText, invertRamp:invertRamp,
+  quantizeLevels:quantizeLevels, dedupeFrames:dedupeFrames, trimFrames:trimFrames,
+  frameAnsi:frameAnsi, renderSvg:renderSvg, renderHtml:renderHtml, applyPost:applyPost};
 </script>
 </body>
 </html>

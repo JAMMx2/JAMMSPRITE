@@ -3,6 +3,56 @@
 All notable changes to JAMMSPRITE are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
+## [1.3.0] — 2026-10-13
+
+### Added
+- **`--dither none|ordered|floyd`** — dithering on the brightness→glyph step.
+  `ordered` is a 4×4 Bayer threshold (crisp, deterministic, very retro);
+  `floyd` is Floyd–Steinberg error diffusion (smooth tonal gradients even on
+  short ramps like `minimal` or `blocks`). Default `none` is pixel-identical
+  to 1.2.0 output. Also in the web app (Glyphs → Dither).
+- **Truecolor ANSI output.** `--ansi` writes `<name>.ans` — 24-bit ANSI text
+  (per-cell RGB with `--color`, else your `--tint`), frames separated by
+  form-feed, ready to `cat`. `--play` now plays in colour too (truecolor with
+  `--color`, otherwise in the `--tint`). Public API: `frame_ansi()`,
+  `write_ansi()`. Web app: **Copy ANSI**.
+- **`jammsprite preview FILE.frames.json`** — a terminal player for existing
+  frame files. No conversion, no ML model: `--anim`, `--loops`,
+  `--duration-ms`, `--color`, `--tint`, `--flip`, `--trim`. Public API:
+  `read_json()`.
+- **`--html`** — `<name>.html`, one self-contained animated page (a `<pre>`
+  plus a few lines of JS, colour or tint) you can host anywhere or paste in as
+  an embed. Public API: `render_html()`. Web app: **HTML** export.
+- **`--svg`** — `<name>.svg`, a scalable vector render that is SMIL-animated
+  when there is more than one frame, with per-cell colour under `--color`.
+  Public API: `render_svg()`. Web app: **SVG** export.
+- **`--dedupe`** — drop frames identical to the previous one, and a final frame
+  that equals the first (loop seam). Public API: `dedupe_frames()`.
+- **`--trim [PAD]`** — crop every frame to the subject's *shared* bounding box
+  (plus `PAD` cells), so JSON/GIF/sheet get smaller without any jitter. Public
+  API: `trim_frames()`. Web app: **Dedupe frames** / **Trim to subject**
+  toggles, applied instantly without a re-convert.
+- Public API: `quantize_levels()` (the dither-aware quantiser),
+  `place_on_grid()` (the pure-numpy grid fill), `even_picks()`, `DITHERS`.
+
+### Changed
+- The glyph-grid fill in `frame_to_ascii` is vectorised with numpy
+  (`place_on_grid`) — same output as before, noticeably faster per frame.
+- `--duration-ms` now also drives the HTML and SVG frame timing.
+- `Config` gained a `dither` field (default `"none"`). The frame JSON format
+  is **unchanged** — existing `*.frames.json` files and renderers keep working.
+- Web app: status errors are prefixed with plain `Error:` text instead of a
+  symbol; footer mentions `jammsprite preview`.
+- Tests: 30 new cases covering the quantiser (all three modes), grid fill and
+  clipping, dedupe, trim, ANSI, HTML, SVG, `read_json`, folder frame limits,
+  and the new CLI flags / `preview` subcommand.
+
+### Fixed
+- `--frames` was ignored for folder input — every image in the folder was
+  converted. It now picks `N` evenly spaced frames like video input does.
+- Still-image input left the source file handle open (`Image.open` without a
+  context manager); it is now loaded eagerly and closed.
+
 ## [1.2.0] — 2026-08-11
 
 ### Added
@@ -86,6 +136,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   fitting, solid fill + despeckle, GIF / sprite-sheet / JSON outputs,
   `--breathe` synthesised motion for stills.
 
+[1.3.0]: https://github.com/JAMMx2/JAMMSPRITE/releases/tag/v1.3.0
 [1.2.0]: https://github.com/JAMMx2/JAMMSPRITE/releases/tag/v1.2.0
 [1.1.1]: https://github.com/JAMMx2/JAMMSPRITE/releases/tag/v1.1.1
 [1.1.0]: https://github.com/JAMMx2/JAMMSPRITE/releases/tag/v1.1.0

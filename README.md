@@ -5,7 +5,7 @@
 [![CI](https://github.com/JAMMx2/JAMMSPRITE/actions/workflows/ci.yml/badge.svg)](https://github.com/JAMMx2/JAMMSPRITE/actions/workflows/ci.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-2ea44f)](https://github.com/JAMMx2/JAMMSPRITE/blob/main/pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
-[![Changelog](https://img.shields.io/badge/changelog-v1.2.0-2ea44f)](CHANGELOG.md)
+[![Changelog](https://img.shields.io/badge/changelog-v1.3.0-2ea44f)](CHANGELOG.md)
 
 Feed it a short clip of a cat walking (or anything), and it gives you back a
 game-ready sprite made entirely of text glyphs — plus an animated preview and a
@@ -29,8 +29,9 @@ rendered in phosphor-green ASCII.
 - Drop a **photo, animated GIF, or short video** (PNG/JPG/WebP/GIF/MP4/WebM) — nothing is uploaded anywhere.
 - **Auto cutout** uses transparency when your image has it, otherwise it lifts the subject off a flat background — or hit **Keep background** to convert the whole frame.
 - **Full color** straight from your source, or any of **12 tint presets** (green, amber, cyan, white, red, matrix, blue, purple, pink, orange, lime, ice) — plus a picker for *any* color, and your choice of background.
-- All 9 glyph styles, gamma detail curve, invert, flip, breathe-motion for stills.
-- Export an **animated GIF**, a **sprite sheet PNG**, a single frame, **`frames.json`** (drops straight into `tools/player.html` or your game engine), or copy a frame as plain text.
+- All 9 glyph styles, gamma detail curve, **ordered / Floyd–Steinberg dithering**, invert, flip, breathe-motion for stills.
+- **Dedupe** repeated frames and **trim** to the subject's bounding box — instantly, no re-convert.
+- Export an **animated GIF**, a **sprite sheet PNG**, a single frame, **`frames.json`** (drops straight into `tools/player.html` or your game engine), a **self-contained animated HTML page**, a **scalable animated SVG**, or copy a frame as plain text / **24-bit ANSI** for your terminal.
 
 The command line below is the power version — bigger batches, the ML background removal, scripting.
 
@@ -114,6 +115,17 @@ jammsprite cat.png --name idle --invert
 
 # see every built-in glyph style
 jammsprite --list-charsets
+
+# dither the tonal steps — smooth gradients on short ramps, or a crisp retro grid
+jammsprite walk.mp4 --name walk --charset minimal --dither floyd
+jammsprite cat.png  --name idle --dither ordered
+
+# drop repeated frames, crop to the subject (+1 cell), and write every extra format
+jammsprite walk.gif --name walk --dedupe --trim 1 --html --svg --ansi --color
+
+# play an existing frames.json in the terminal — in truecolor, no ML, no conversion
+jammsprite preview out/walk.frames.json --color
+jammsprite preview out/walk.frames.json --anim walk_flipped --tint amber --loops 5
 ```
 
 (`python -m jammsprite …` works too.)
@@ -125,6 +137,9 @@ Each run writes to `./out/` (override with `--out`):
 | `<name>.frames.json` | frame data `{chars, colors}` — feed it to your own renderer / game engine |
 | `<name>.gif` | animated preview (phosphor green by default, `--tint`/`--color` to change) |
 | `<name>.sheet.png` | labelled sprite / contact sheet — every frame in a grid |
+| `<name>.html` | (`--html`) one self-contained animated page — a `<pre>` plus a few lines of JS; drop it on any static host or paste the `<div>` as an embed |
+| `<name>.svg` | (`--svg`) scalable vector render, SMIL-animated when there's more than one frame; per-cell colour with `--color` |
+| `<name>.ans` | (`--ansi`) 24-bit ANSI text, frames separated by form-feed — `cat` it in any truecolor terminal |
 
 ### Options
 
@@ -137,6 +152,7 @@ Each run writes to `./out/` (override with `--out`):
 | `--list-charsets` | — | preview every built-in glyph style and exit |
 | `--gamma` | `1.0` | tone/detail curve: `>1` brightens midtones (denser), `<1` deepens shadows |
 | `--invert` | off | flip the ramp dark↔bright (light-on-dark subjects) |
+| `--dither` | `none` | brightness→glyph dithering: `none`, `ordered` (Bayer 4×4, crisp/retro), `floyd` (Floyd–Steinberg, smooth gradients on short ramps) |
 | `--start` / `--dur` | `0` / whole clip | video: time window to sample (seconds) |
 | `--fps` | `6` | video: sampling rate |
 | `--frames` | `16` | max frames to keep |
@@ -145,8 +161,11 @@ Each run writes to `./out/` (override with `--out`):
 | `--tint` | `green` | monochrome tint: `green`, `amber`, `cyan`, `white`, `red`, `matrix`, `blue`, `purple`, `pink`, `orange`, `lime`, `ice`, or any `R,G,B` |
 | `--flip` | off | mirror the sprite horizontally |
 | `--both-ways` | off | also write `<name>_flipped` frames into the JSON |
-| `--play [N]` | off | play the result in the terminal for `N` loops (default 3) |
-| `--duration-ms` | `120` | GIF frame duration |
+| `--dedupe` | off | drop frames identical to the previous one (and a last frame equal to the first) |
+| `--trim [PAD]` | off | crop every frame to the subject's shared bounding box, plus `PAD` cells (default 0) — smaller JSON/GIF, no jitter |
+| `--play [N]` | off | play the result in the terminal for `N` loops (default 3) — truecolor with `--color`, else in your `--tint` |
+| `--duration-ms` | `120` | GIF / HTML / SVG frame duration |
+| `--html` / `--svg` / `--ansi` | off | also write `<name>.html` / `<name>.svg` / `<name>.ans` (see the table above) |
 | `--no-gif` / `--no-sheet` / `--no-json` | — | skip an output |
 | `--model` | `isnet-general-use` | rembg model |
 | `--print` | off | print the first frame to stdout |
@@ -154,13 +173,25 @@ Each run writes to `./out/` (override with `--out`):
 
 ---
 
-## Preview in your browser
+## Preview in your browser — or your terminal
 
 Open [`tools/player.html`](tools/player.html) in a browser (grab a local copy —
 GitHub shows HTML as source) — no install, no server — and drop any
 `*.frames.json` on it. You get play/pause, an fps slider, flip, full-colour
 mode, and a live tint picker. Handy for checking a sprite before wiring it into
 an engine.
+
+Or stay in the terminal:
+
+```bash
+jammsprite preview out/walk.frames.json            # tint green, 3 loops
+jammsprite preview out/walk.frames.json --color    # per-cell truecolor
+jammsprite preview out/walk.frames.json --trim --anim walk_flipped --duration-ms 80 --loops 0
+```
+
+`preview` never touches the ML model — it just reads the JSON (`--anim` picks
+an animation inside the file, `--trim` crops to the subject so it fits small
+windows, `--flip` mirrors it). Ctrl-C stops it.
 
 ---
 
@@ -217,6 +248,12 @@ frames — that's a sprite. Or use it from Python:
 
 ```python
 from jammsprite import Config, frame_to_ascii, flip_frame
+from jammsprite import dedupe_frames, trim_frames, frame_ansi, render_html, render_svg, read_json
+
+name, frames = read_json("out/walk.frames.json")
+frames = trim_frames(dedupe_frames(frames), pad=1)
+print(frame_ansi(frames[0], color=True))            # 24-bit ANSI, straight to a terminal
+open("walk.svg", "w").write(render_svg(frames, Config(), color=True))
 ```
 
 ---
